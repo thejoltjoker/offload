@@ -40,7 +40,7 @@ def setup_logger(level="info"):
     fh.setLevel(logging.DEBUG)
 
     # Create formatter
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)8s - %(message)s')
 
     # Add formatter
     ch.setFormatter(formatter)
@@ -108,7 +108,7 @@ def get_file_info(file_path):
         "date": datetime.fromtimestamp(file_timestamp),
         "size": file_path.stat().st_size
     }
-    logging.debug("File info: %s", file_info)
+
     return file_info
 
 
@@ -116,7 +116,7 @@ def compare_checksums(source, destination, hashtype="xxhash"):
     source_hash = get_file_checksum(source, hashtype=hashtype)
     dest_hash = get_file_checksum(destination, hashtype=hashtype)
     if dest_hash == source_hash:
-        logging.info(f"Checksums match: {source_hash} (source)| {dest_hash} (destination)")
+        logging.info(f"Checksums match: {source_hash} (source) | {dest_hash} (destination)")
         return True
     else:
         logging.info(f"Checksums mismatch: {source_hash} (source)| {dest_hash} (destination)")
@@ -193,6 +193,7 @@ def get_file_list(folder_path, exclude=None):
         if file.name not in exclude:
             logging.debug(f"Getting file info for {file.name}")
             file_list[file_id] = get_file_info(file)
+            logging.debug(f"File info: {file_list[file_id]}")
 
             # Append file size to total file size
             total_file_size += file_list[file_id]["size"]

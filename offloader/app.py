@@ -7,6 +7,8 @@ This script is used for transferring files and verifying them using a checksum.
 """
 # TODO multiple destinations
 # TODO make it easier to customize
+# TODO clean up code
+# TODO create report
 import os
 import logging
 import argparse
@@ -145,69 +147,27 @@ class Offloader:
 
         # Process files
         for file_id in source_files:
+            # Reset the incremental number
             incremental = 0
 
             # Get file info for current file
             source_file = source_files[file_id]
+
+            # Set destination file name base on source file name
             dest_file = {
                 "name": source_file.get("name")
             }
 
             # Display how far along the transfer we are
-            transfer_percentage = round(
-                (total_transferred_size / total_file_size) * 100, 2)
+            transfer_percentage = round((total_transferred_size / total_file_size) * 100, 2)
             logging.info(
                 f"Processing file {file_id}/{len(source_files)} (~{transfer_percentage}%) | {source_file['name']}")
 
-            # Get destination path
-            if self.structure == "original":
-                # Use the same structure as source
-                dest_file["path"] = Path(
-                    self.destination / source_file["path"].relative_to(self.source))
+            # Get destination path based on the folder structure
+            dest_file["path"] = self.get_destination_path(source_file)
 
-            elif self.structure == "taken_date":
-                # Construct new structure from modification date
-                date_folders = f"{source_file['date'].year}/{source_file['date'].strftime('%Y-%m-%d')}"
-                dest_file["path"] = Path(
-                    self.destination) / date_folders / source_file["name"]
-
-            elif self.structure == "offload_date":
-                # Construct new structure from modification date
-                date_folders = f"{self.today.year}/{self.today.strftime('%Y-%m-%d')}"
-                dest_file["path"] = Path(
-                    self.destination) / date_folders / source_file["name"]
-
-            elif self.structure == "flat":
-                # Put files straight into destination folder
-                dest_file["path"] = Path(
-                    self.destination / source_file["name"])
-
-            else:
-                raise Exception("No valid file structure specified")
-
-            # Add prefix
-            if self.prefixes.get(self.prefix):
-
-                # The prefix is the date of the file modification date
-                if self.prefix == "taken_date":
-                    prefix = f"{source_file['date'].strftime(self.prefixes['taken_date'])}"
-
-                elif self.prefix == "offload_date":
-                    prefix = f"{self.prefixes['offload_date']}"
-            else:
-                prefix = self.prefix
-
-            if dest_file["name"].startswith(prefix):
-                logging.info(
-                    f"Filename already starts with {prefix}. Not adding prefix")
-                logging.debug(f"Filename {dest_file['name']}")
-            else:
-                dest_file["name"] = f"{prefix}_{dest_file['name']}"
-                dest_file["path"] = dest_file["path"].parent / \
-                                    dest_file["name"]
-                logging.info(f"Prefix {prefix} added to {source_file['name']}")
-                logging.debug(f"New filename {dest_file['name']}")
-                logging.debug(f"New destination path {dest_file['path']}")
+            # Add prefix to the filename and path
+            dest_file.update(self.add_prefix_to_filename(source_file, dest_file))
 
             # Check if file with same name exists
             while True:
@@ -258,11 +218,21 @@ class Offloader:
                 if dest_file["path"].parent not in dest_folders:
                     dest_folders.append(dest_file["path"].parent)
 
+                source_file["checksum"] = utils.get_file_checksum(source_file["path"])
+
                 if self.mode == "copy":
                     utils.copy_file(source_file["path"], dest_file["path"])
 
                 elif self.mode == "move":
                     utils.move_file(source_file["path"], dest_file["path"])
+
+                logging.info("Verifying transferred file")
+                dest_file["checksum"] = utils.get_file_checksum(dest_file["path"])
+
+                if dest_file["checksum"] == source_file["checksum"]:
+                    logging.info("File transferred successfully")
+                else:
+                    logging.error("File NOT transferred successfully, mismatching checksums")
 
             # Add file size to total
             total_transferred_size += source_file['size']
@@ -272,18 +242,18 @@ class Offloader:
 
             # Calculate remaining time
             elapsed_time = time.time() - start_time
-            logging.debug(
+            logging.info(
                 f"Elapsed time: {time.strftime('%-M min %-S sec', time.gmtime(elapsed_time))}")
 
             bytes_per_second = total_transferred_size / elapsed_time
-            logging.debug(
+            logging.info(
                 f"Avg. transfer speed: {utils.convert_size(bytes_per_second)}/s")
 
             size_remaining = total_file_size - total_transferred_size
             time_remaining = size_remaining / bytes_per_second
-            logging.debug(
+            logging.info(
                 f"Size remaining: {utils.convert_size(size_remaining)}")
-            logging.debug(
+            logging.info(
                 f"Approx. time remaining: {time.strftime('%-M min %-S sec', time.gmtime(time_remaining))}")
 
             logging.info("---\n")
@@ -293,14 +263,66 @@ class Offloader:
                 f"Created the following folders {', '.join([str(x.name) for x in dest_folders])}")
             logging.debug([str(x.resolve()) for x in dest_folders])
 
-        logging.info(f"{len(processed_files)} files transferred")
-        logging.debug(f"Transferred files: {processed_files}")
+        logging.info(f"{len(processed_files)} files processed")
+        logging.debug(f"Processed files: {processed_files}")
 
         logging.info(f"{len(dest_folders)} destination folders")
         logging.debug(f"Destination folders: {dest_folders}")
 
         logging.info(f"{len(skipped_files)} files skipped")
         logging.debug(f"Skipped files: {skipped_files}")
+
+    def get_destination_path(self, source_file):
+        if self.structure == "original":
+            # Use the same structure as source
+            dest_path = Path(
+                self.destination / source_file["path"].relative_to(self.source))
+
+        elif self.structure == "taken_date":
+            # Construct new structure from modification date
+            date_folders = f"{source_file['date'].year}/{source_file['date'].strftime('%Y-%m-%d')}"
+            dest_path = Path(
+                self.destination) / date_folders / source_file["name"]
+
+        elif self.structure == "offload_date":
+            # Construct new structure from modification date
+            date_folders = f"{self.today.year}/{self.today.strftime('%Y-%m-%d')}"
+            dest_path = Path(
+                self.destination) / date_folders / source_file["name"]
+
+        elif self.structure == "flat":
+            # Put files straight into destination folder
+            dest_path = Path(
+                self.destination / source_file["name"])
+
+        else:
+            raise Exception("No valid file structure specified")
+
+        return dest_path
+
+    def add_prefix_to_filename(self, source_file, dest_file):
+        if self.prefixes.get(self.prefix):
+            # The prefix is the date of the file modification date
+            if self.prefix == "taken_date":
+                prefix = f"{source_file['date'].strftime(self.prefixes['taken_date'])}"
+
+            elif self.prefix == "offload_date":
+                prefix = f"{self.prefixes['offload_date']}"
+        else:
+            prefix = self.prefix
+
+        if dest_file["name"].startswith(prefix):
+            logging.info(
+                f"Filename already starts with {prefix}. Not adding prefix")
+            logging.debug(f"Filename {dest_file['name']}")
+        else:
+            dest_file["name"] = f"{prefix}_{dest_file['name']}"
+            dest_file["path"] = dest_file["path"].parent / dest_file["name"]
+            logging.info(f"Prefix {prefix} added to {source_file['name']}")
+            logging.debug(f"New filename {dest_file['name']}")
+            logging.debug(f"New destination path {dest_file['path']}")
+
+        return dest_file
 
 
 def cli():
@@ -319,10 +341,6 @@ def cli():
                         type=str,
                         help="The destination folder",
                         action="store")
-
-    # parser.add_argument("--original-structure",
-    #                         help="Copies with original filenames and structure",
-    #                         action="store_true")
 
     parser.add_argument("-f", "--folder-structure",
                         choices=["original", "taken_date",
@@ -364,7 +382,8 @@ def cli():
     if args.source is None:
         confirmation = True
         if os.name == "posix":
-            volumes = {n: str(v) for (n, v) in enumerate(Path("/Volumes").iterdir(), 1)}
+            volumes = {n: str(v) for (n, v) in enumerate(
+                Path("/Volumes").iterdir(), 1)}
         print(f"Choose a volume to offload from:")
         for n, vol in volumes.items():
             print(f"{n}: {vol}")
@@ -388,9 +407,11 @@ def cli():
 
     if args.destination is None:
         confirmation = True
-        recent_paths = {n: str(v) for (n, v) in enumerate(utils.get_recent_paths(), 1)}
+        recent_paths = {n: str(v) for (n, v) in enumerate(
+            utils.get_recent_paths(), 1)}
         if recent_paths:
-            print(f"Enter the path to your destination folder or use one of these recent paths:")
+            print(
+                f"Enter the path to your destination folder or use one of these recent paths:")
             for n, path in recent_paths.items():
                 print(f"{n}: {path}")
         else:
@@ -416,8 +437,6 @@ def cli():
 
     else:
         destination = args.destination
-
-
 
     # Save destination path for history
     utils.update_recent_paths(destination)
