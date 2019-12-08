@@ -12,9 +12,10 @@ import time
 import hashlib
 import xxhash
 import json
+import subprocess
 from pathlib import Path
 from datetime import datetime
-
+from pprint import pprint
 
 def setup_logger(level="info"):
     """Create a logger with file and stream handler"""
@@ -33,14 +34,15 @@ def setup_logger(level="info"):
     ch.setLevel(logging.DEBUG)
 
     # Create file handler and set level to debug
-    log_folder = Path("logs")
+    log_folder = Path(__file__).parent / "logs"
     log_folder.mkdir(exist_ok=True)
     log_filename = f"{datetime.now().strftime('%y%m%d%H%M')}_offload.log"
     fh = logging.FileHandler(log_folder / log_filename, mode='w')
     fh.setLevel(logging.DEBUG)
 
     # Create formatter
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)8s - %(message)s')
+    formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)-8s - %(message)s')
 
     # Add formatter
     ch.setFormatter(formatter)
@@ -116,10 +118,12 @@ def compare_checksums(source, destination, hashtype="xxhash"):
     source_hash = get_file_checksum(source, hashtype=hashtype)
     dest_hash = get_file_checksum(destination, hashtype=hashtype)
     if dest_hash == source_hash:
-        logging.info(f"Checksums match: {source_hash} (source) | {dest_hash} (destination)")
+        logging.info(
+            f"Checksums match: {source_hash} (source) | {dest_hash} (destination)")
         return True
     else:
-        logging.info(f"Checksums mismatch: {source_hash} (source)| {dest_hash} (destination)")
+        logging.info(
+            f"Checksums mismatch: {source_hash} (source)| {dest_hash} (destination)")
         return False
 
 
@@ -202,7 +206,8 @@ def get_file_list(folder_path, exclude=None):
             file_id += 1
 
             logging.info(f"{file_id - 1} files collected")
-            logging.debug(f"Total size collected: {convert_size(total_file_size)}")
+            logging.debug(
+                f"Total size collected: {convert_size(total_file_size)}")
 
     elapsed_time = time.time() - start_time
 
@@ -212,10 +217,40 @@ def get_file_list(folder_path, exclude=None):
 
     return file_list
 
+def exiftool(file_path):
+    """Run exiftool in subprocess and return the output"""
+    cmd = ['exiftool', '-G', '-j', '-sort', file_path]
+    try:
+        s = subprocess.Popen(cmd, stdout=subprocess.PIPE)
+        s = s.stdout.read()
+
+        return s.strip()
+
+    except subprocess.CalledProcessError as e:
+        logging.error(e)
+        return None
+
+
+def get_metadata(file_path):
+    """Get exif data using exiftool"""
+
+
+    if shutil.which("exiftool") is not None:
+        raw_meta = exiftool(file_path)
+        if raw_meta:
+            # convert bytes to string
+            exif = raw_meta.decode('utf-8').rstrip('\r\n')
+            return json.loads(exif)[0]
+        else:
+            return raw_meta
+    else:
+        logging.error("Couldn't find exiftool")
+        return None
 
 def main():
     """docstring for main"""
-    pass
+    path = "/Users/johannes/Dropbox/Camera Uploads/2013-08-26 14.34.00.jpg"
+    pprint(get_metadata(path))
 
 
 if __name__ == '__main__':

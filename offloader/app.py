@@ -107,12 +107,13 @@ exclude = ["MEDIAPRO.XML",
 
 
 class Offloader:
-    def __init__(self, source, dest, structure, prefix, mode, dryrun, log_level):
+    def __init__(self, source, dest, structure, filename, prefix, mode, dryrun, log_level):
         self.logger = utils.setup_logger(log_level)
         self.today = datetime.now()
         self.source = source
         self.destination = dest
         self.structure = structure
+        self.filename = filename
         self.prefix = prefix
         self.mode = mode
         self.dryrun = dryrun
@@ -120,7 +121,9 @@ class Offloader:
 
         # Settings
         self.prefixes = {"taken_date": "%y%m%d",
-                         "offload_date": datetime.now().strftime("%y%m%d")}
+                         "taken_date_time": "%y%m%d_%H%M%S",
+                         "offload_date": datetime.now().strftime("%y%m%d"),
+                         "none":""}
 
     def offload(self):
         dest_folders = []
@@ -154,8 +157,34 @@ class Offloader:
             source_file = source_files[file_id]
 
             # Set destination file name base on source file name
+            if self.filename:
+                file_ext = Path(source_file.get("name")).suffix
+
+                if self.filename == "camera_model":
+                    metadata = utils.get_metadata(source_file["path"])
+                    if metadata.get("EXIF:Model"):
+                        filename = f"{metadata.get('EXIF:Model')}{file_ext}"
+                    else:
+                        logging.info("Couldn't find the camera model")
+                        filename = f"unknown{file_ext}"
+
+                elif self.filename == "camera_make":
+                    metadata = utils.get_metadata(source_file["path"])
+                    if metadata.get("EXIF:Make"):
+                        filename = f"{metadata.get('EXIF:Make')}{file_ext}"
+                    else:
+                        logging.info("Couldn't find the camera make")
+                        filename = f"unknown{file_ext}"
+
+                else:
+                    filename = f"{self.filename}{file_ext}"
+
+            else:
+                filename = source_file.get("name")
+
+            # Set destination file name base on filename variable
             dest_file = {
-                "name": source_file.get("name")
+                "name": filename
             }
 
             # Display how far along the transfer we are
@@ -259,6 +288,9 @@ class Offloader:
             logging.info("---\n")
 
         if dest_folders:
+            # Sort folder for better output
+            dest_folders.sort()
+
             logging.info(
                 f"Created the following folders {', '.join([str(x.name) for x in dest_folders])}")
             logging.debug([str(x.resolve()) for x in dest_folders])
@@ -275,25 +307,21 @@ class Offloader:
     def get_destination_path(self, source_file):
         if self.structure == "original":
             # Use the same structure as source
-            dest_path = Path(
-                self.destination / source_file["path"].relative_to(self.source))
+            dest_path = Path(self.destination) / source_file["path"].relative_to(self.source)
 
         elif self.structure == "taken_date":
             # Construct new structure from modification date
             date_folders = f"{source_file['date'].year}/{source_file['date'].strftime('%Y-%m-%d')}"
-            dest_path = Path(
-                self.destination) / date_folders / source_file["name"]
+            dest_path = Path(self.destination) / date_folders / source_file["name"]
 
         elif self.structure == "offload_date":
             # Construct new structure from modification date
             date_folders = f"{self.today.year}/{self.today.strftime('%Y-%m-%d')}"
-            dest_path = Path(
-                self.destination) / date_folders / source_file["name"]
+            dest_path = Path(self.destination) / date_folders / source_file["name"]
 
         elif self.structure == "flat":
             # Put files straight into destination folder
-            dest_path = Path(
-                self.destination / source_file["name"])
+            dest_path = Path(self.destination) / source_file["name"]
 
         else:
             raise Exception("No valid file structure specified")
@@ -301,26 +329,39 @@ class Offloader:
         return dest_path
 
     def add_prefix_to_filename(self, source_file, dest_file):
-        if self.prefixes.get(self.prefix):
-            # The prefix is the date of the file modification date
-            if self.prefix == "taken_date":
-                prefix = f"{source_file['date'].strftime(self.prefixes['taken_date'])}"
+        """Add the set prefix to the"""
+        if not self.structure == "original":
+            if self.prefix == "none":
+                logging.info(f"Prefix is set to none. Not adding prefix")
+                logging.debug(f"Filename {dest_file['name']}")
 
-            elif self.prefix == "offload_date":
-                prefix = f"{self.prefixes['offload_date']}"
-        else:
-            prefix = self.prefix
+            else:
+                if self.prefixes.get(self.prefix):
+                    # The prefix is the date of the file modification date
+                    if self.prefix == "taken_date":
+                        prefix = f"{source_file['date'].strftime(self.prefixes['taken_date'])}"
 
-        if dest_file["name"].startswith(prefix):
-            logging.info(
-                f"Filename already starts with {prefix}. Not adding prefix")
-            logging.debug(f"Filename {dest_file['name']}")
-        else:
-            dest_file["name"] = f"{prefix}_{dest_file['name']}"
-            dest_file["path"] = dest_file["path"].parent / dest_file["name"]
-            logging.info(f"Prefix {prefix} added to {source_file['name']}")
-            logging.debug(f"New filename {dest_file['name']}")
-            logging.debug(f"New destination path {dest_file['path']}")
+                    elif self.prefix == "taken_date_time":
+                        prefix = f"{source_file['date'].strftime(self.prefixes['taken_date_time'])}"
+
+                    elif self.prefix == "offload_date":
+                        prefix = f"{self.prefixes['offload_date']}"
+
+                else:
+                    prefix = self.prefix
+
+                if dest_file["name"].startswith(prefix):
+                    logging.info(
+                        f"Filename already starts with {prefix}. Not adding prefix")
+                    logging.debug(f"Filename {dest_file['name']}")
+
+
+                else:
+                    dest_file["name"] = f"{prefix}_{dest_file['name']}"
+                    dest_file["path"] = dest_file["path"].parent / dest_file["name"]
+                    logging.info(f"Prefix {prefix} added to {source_file['name']}")
+                    logging.debug(f"New filename {dest_file['name']}")
+                    logging.debug(f"New destination path {dest_file['path']}")
 
         return dest_file
 
@@ -350,8 +391,13 @@ def cli():
                         help="Set the folder structure.\nDefault: taken_date",
                         action="store")
 
+    parser.add_argument("-n", "--name",
+                        type=str,
+                        help="Set a new filename",
+                        action="store")
+
     parser.add_argument("-p", "--prefix",
-                        help="Set the filename prefix. Enter a custom prefix, \"taken_date\" or \"offload_date\" for templates.\nDefault: taken_date",
+                        help="Set the filename prefix. Enter a custom prefix, \"taken_date\", \"taken_date_time\" or \"offload_date\" for templates. \"none\" for no prefix.\nDefault: taken_date",
                         default="taken_date",
                         action="store")
 
@@ -480,6 +526,7 @@ def cli():
     ol = Offloader(source=source,
                    dest=destination,
                    structure=folder_structure,
+                   filename=args.name,
                    prefix=args.prefix,
                    mode=mode,
                    dryrun=args.dryrun,
