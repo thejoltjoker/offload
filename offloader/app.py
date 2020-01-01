@@ -123,9 +123,10 @@ class Offloader:
         self.prefixes = {"taken_date": "%y%m%d",
                          "taken_date_time": "%y%m%d_%H%M%S",
                          "offload_date": datetime.now().strftime("%y%m%d"),
-                         "none":""}
+                         "none": ""}
 
     def offload(self):
+        """Offload files"""
         dest_folders = []
         skipped_files = []
         processed_files = []
@@ -176,6 +177,10 @@ class Offloader:
                         logging.info("Couldn't find the camera make")
                         filename = f"unknown{file_ext}"
 
+                elif self.filename == "validify":
+                    # Make valid filename
+                    pass
+
                 else:
                     filename = f"{self.filename}{file_ext}"
 
@@ -198,11 +203,15 @@ class Offloader:
             # Add prefix to the filename and path
             dest_file.update(self.add_prefix_to_filename(source_file, dest_file))
 
+            # Print meta
+            logging.info(f"File modification date: {source_file.get('date')}")
+            logging.info(f"Source path: {source_file.get('path')}")
+            logging.info(f"Destination path: {dest_file.get('path')}")
+
             # Check if file with same name exists
             while True:
                 if dest_file["path"].exists():
-                    logging.info(
-                        "File with the same name exists in destination, comparing checksums")
+                    logging.info("File with the same name exists in destination, comparing checksums")
 
                     # Get file info for existing file
                     dest_file = utils.get_file_info(dest_file["path"])
@@ -211,8 +220,8 @@ class Offloader:
                     if utils.compare_checksums(source_file['path'], dest_file['path']):
                         logging.warning(
                             f"File ({dest_file['name']}) with matching checksums already exists in destination, skipping")
-                        logging.debug(f"Source: {source_file}")
-                        logging.debug(f"Destination: {dest_file}")
+                        # logging.debug(f"Source: {source_file}")
+                        # logging.debug(f"Destination: {dest_file}")
 
                         # Add file to skipped list
                         skipped_files.append(source_file["name"])
@@ -222,8 +231,8 @@ class Offloader:
                     else:
                         logging.warning(
                             f"File ({dest_file['name']}) with the same name already exists in destination, adding incremental")
-                        logging.debug(f"Source: {source_file}")
-                        logging.debug(f"Destination: {dest_file}")
+                        # logging.debug(f"Source: {source_file}")
+                        # logging.debug(f"Destination: {dest_file}")
 
                         # Add incremental to filename
                         incremental += 1
@@ -233,35 +242,35 @@ class Offloader:
                         logging.debug(
                             f"Added increment to filename {dest_file['name']}")
                 else:
+                    # If destination file doesn't exist
+                    if self.dryrun:
+                        logging.info("DRYRUN ENABLED, NOT COPYING")
+
+                    else:
+                        # Create destination folder
+                        dest_file["path"].parent.mkdir(exist_ok=True, parents=True)
+
+                        # Add folder to destination folders list
+                        if dest_file["path"].parent not in dest_folders:
+                            dest_folders.append(dest_file["path"].parent)
+
+                        # Get checksum of source file for verification
+                        source_file["checksum"] = utils.get_file_checksum(source_file["path"])
+
+                        if self.mode == "copy":
+                            utils.copy_file(source_file["path"], dest_file["path"])
+
+                        elif self.mode == "move":
+                            utils.move_file(source_file["path"], dest_file["path"])
+
+                        logging.info("Verifying transferred file")
+                        dest_file["checksum"] = utils.get_file_checksum(dest_file["path"])
+
+                        if dest_file["checksum"] == source_file["checksum"]:
+                            logging.info("File transferred successfully")
+                        else:
+                            logging.error("File NOT transferred successfully, mismatching checksums")
                     break
-
-            # If destination file doesn't exist
-            if self.dryrun:
-                logging.info("DRYRUN ENABLED, NOT COPYING")
-
-            else:
-                # Create destination folder
-                dest_file["path"].parent.mkdir(exist_ok=True, parents=True)
-
-                # Add folder to destination folders list
-                if dest_file["path"].parent not in dest_folders:
-                    dest_folders.append(dest_file["path"].parent)
-
-                source_file["checksum"] = utils.get_file_checksum(source_file["path"])
-
-                if self.mode == "copy":
-                    utils.copy_file(source_file["path"], dest_file["path"])
-
-                elif self.mode == "move":
-                    utils.move_file(source_file["path"], dest_file["path"])
-
-                logging.info("Verifying transferred file")
-                dest_file["checksum"] = utils.get_file_checksum(dest_file["path"])
-
-                if dest_file["checksum"] == source_file["checksum"]:
-                    logging.info("File transferred successfully")
-                else:
-                    logging.error("File NOT transferred successfully, mismatching checksums")
 
             # Add file size to total
             total_transferred_size += source_file['size']
@@ -305,6 +314,9 @@ class Offloader:
         logging.debug(f"Skipped files: {skipped_files}")
 
     def get_destination_path(self, source_file):
+        """Get a destination path depending on the structure setting
+        :returns destination path
+        :rtype string"""
         if self.structure == "original":
             # Use the same structure as source
             dest_path = Path(self.destination) / source_file["path"].relative_to(self.source)
@@ -319,6 +331,11 @@ class Offloader:
             date_folders = f"{self.today.year}/{self.today.strftime('%Y-%m-%d')}"
             dest_path = Path(self.destination) / date_folders / source_file["name"]
 
+        elif self.structure == "year":
+            # Construct new structure from modification date
+            date_folders = f"{source_file['date'].year}"
+            dest_path = Path(self.destination) / date_folders / source_file["name"]
+
         elif self.structure == "flat":
             # Put files straight into destination folder
             dest_path = Path(self.destination) / source_file["name"]
@@ -329,7 +346,9 @@ class Offloader:
         return dest_path
 
     def add_prefix_to_filename(self, source_file, dest_file):
-        """Add the set prefix to the"""
+        """Add the set prefix to the filename
+        :return destination file dict with update file path
+        :rtype dict"""
         if not self.structure == "original":
             if self.prefix == "none":
                 logging.info(f"Prefix is set to none. Not adding prefix")
@@ -367,7 +386,7 @@ class Offloader:
 
 
 def cli():
-    """docstring for main"""
+    """Command line interface"""
     # Create the parser
     parser = argparse.ArgumentParser(
         description="Offload files with checksum verification")
@@ -385,7 +404,7 @@ def cli():
 
     parser.add_argument("-f", "--folder-structure",
                         choices=["original", "taken_date",
-                                 "offload_date", "flat"],
+                                 "offload_date", "year", "flat"],
                         dest="structure",
                         default="taken_date",
                         help="Set the folder structure.\nDefault: taken_date",

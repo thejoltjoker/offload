@@ -9,16 +9,22 @@ import logging
 import shutil
 import math
 import time
-import hashlib
-import xxhash
 import json
 import subprocess
 from pathlib import Path
 from datetime import datetime
 from pprint import pprint
 
+try:
+    import xxhash
+except ImportError:
+    xxhash = None
+    import hashlib
+
+
 def setup_logger(level="info"):
-    """Create a logger with file and stream handler"""
+    """Create a logger with file and stream handler
+    :return logger object"""
     # Create logger
     logger = logging.getLogger()
     if logger.hasHandlers():
@@ -28,6 +34,8 @@ def setup_logger(level="info"):
         logger.setLevel(logging.DEBUG)
     elif level == 'info':
         logger.setLevel(logging.INFO)
+    elif level == 'error':
+        logger.setLevel(logging.ERROR)
 
     # Create console handler and set level to debug
     ch = logging.StreamHandler()
@@ -60,9 +68,14 @@ def get_file_checksum(filename, hashtype="xxhash", block_size=65536):
     # Choose a hash type
     if hashtype == "xxhash":
         # Use xxhash if it exists
-        h = xxhash.xxh64()
-    else:
+        if xxhash is None:
+            raise Exception("xxhash not available on this platform.  Try 'pip install xxhash'")
+        else:
+            h = xxhash.xxh64()
+    elif hashtype == "md5":
         h = hashlib.md5()
+    elif hashtype == "sha256":
+        h = hashlib.sha256()
 
     with open(filename, "rb") as f:
         for chunk in iter(lambda: f.read(block_size), b""):
@@ -71,10 +84,13 @@ def get_file_checksum(filename, hashtype="xxhash", block_size=65536):
 
 
 def convert_date(timestamp):
+    """Convert date from timestamp
+    :return datetime object"""
     return datetime.fromtimestamp(timestamp)
 
 
 def create_folder(folder):
+    """Create a folder if it doesn't exist"""
     if not os.path.exists(folder):
         os.makedirs(folder)
 
@@ -91,16 +107,19 @@ def convert_size(size_bytes):
 
 
 def move_file(source, destination):
+    """Move a file"""
     shutil.move(source, destination)
 
 
 def copy_file(source, destination):
+    """Copy a file"""
     shutil.copyfile(source, destination)
 
 
 def get_file_info(file_path):
     """Get basic info about the file
-    :return dict"""
+    :return file info dict
+    :rtype dict"""
     file_path = Path(file_path)
     file_timestamp = file_path.stat().st_mtime
     file_info = {
@@ -128,7 +147,7 @@ def compare_checksums(source, destination, hashtype="xxhash"):
 
 
 def update_recent_paths(path):
-    """Output json data to a file"""
+    """Output path to recent paths"""
     output_path = Path(__file__).parent / "recent_paths.json"
     recent_paths = []
 
@@ -138,9 +157,13 @@ def update_recent_paths(path):
     except FileNotFoundError as e:
         logging.warning("File not found.")
 
-    # Update data
-    if path not in recent_paths:
-        recent_paths.insert(0, path)
+    # Remove path from list
+    for n, p in enumerate(recent_paths):
+        if path == p:
+            recent_paths.pop(n)
+
+    # Add path to top of list
+    recent_paths.insert(0, path)
 
     # Write data
     try:
@@ -217,6 +240,7 @@ def get_file_list(folder_path, exclude=None):
 
     return file_list
 
+
 def exiftool(file_path):
     """Run exiftool in subprocess and return the output"""
     cmd = ['exiftool', '-G', '-j', '-sort', file_path]
@@ -233,8 +257,6 @@ def exiftool(file_path):
 
 def get_metadata(file_path):
     """Get exif data using exiftool"""
-
-
     if shutil.which("exiftool") is not None:
         raw_meta = exiftool(file_path)
         if raw_meta:
@@ -246,6 +268,7 @@ def get_metadata(file_path):
     else:
         logging.error("Couldn't find exiftool")
         return None
+
 
 def main():
     """docstring for main"""
