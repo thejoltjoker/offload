@@ -17,8 +17,26 @@ import time
 import utils
 from pathlib import Path
 from datetime import datetime
+import sys
+
+try:
+    import xxhash
+
+    CHECKSUM_METHOD = 'xxhash'
+
+except ImportError:
+    xxhash = None
+    CHECKSUM_METHOD = 'md5'
+
+if sys.platform == 'darwin':
+    APP_DATA_PATH = Path('~/Library/Application Support/CaffeineCreations/Offloader')
+elif sys.platform == 'win64':
+    APP_DATA_PATH = Path('~/Library/Application Support/CaffeineCreations/Offloader')
+else:
+    APP_DATA_PATH = Path(__file__).parent
 
 exclude_files = ["MEDIAPRO.XML",
+                 "Icon",
                  "STATUS.BIN",
                  "SONYCARD.IND",
                  "AVIN0001.INP",
@@ -104,7 +122,15 @@ exclude_files = ["MEDIAPRO.XML",
                  "live.0.indexHead",
                  "journal.412",
                  "retire.411",
-                 ".DS_Store"]
+                 ".DS_Store",
+                 "fseventsd-uuid.",
+                 ".dropbox.device",
+                 "Icon?",
+                 "Icon\r.",
+                 "Icon\r",
+                 "store_generation.",
+                 "store_generation.\r",
+                 ".Spotlight-V100"]
 
 
 class Offloader:
@@ -129,29 +155,37 @@ class Offloader:
         errored_files = []
 
         # Get list of files in source folder
-        source_list = FileList(self.source)
+        logging.info("Getting list of files")
+        source_list = FileList(self.source, exclude=exclude_files)
 
-        logging.info(f"Total file size: {utils.convert_size(source_list.total_size)}")
-        logging.info(f"Average file size: {utils.convert_size(source_list.total_size / len(source_list.files))}")
+        logging.info(f"Total file size: {utils.convert_size(source_list.size)}")
+        logging.info(f"Average file size: {utils.convert_size(source_list.size / len(source_list.files))}")
         logging.info("---\n")
 
         # Setup variables for stats
         total_transferred_size = 0
         start_time = time.time()
 
+        # Iterate over all the files
         for file_id, source_file in source_list.files.items():
+            logging.debug([x for x in source_file.__dict__.items()])
+            skip = False
             # Display how far along the transfer we are
-            transfer_percentage = round((total_transferred_size / source_list.total_size) * 100, 2)
-            logging.info(f"Processing file {file_id}/{len(source_list.files)} "
+            transfer_percentage = round(
+                (total_transferred_size / source_list.size) * 100, 2)
+            logging.info(f"Processing file {file_id + 1}/{len(source_list.files)} "
                          f"(~{transfer_percentage}%) | {source_file.filename}")
 
             # Create File object for destination file
             dest_folder = self.destination / utils.destination_folder(source_file.mdate, preset=self.structure)
             dest_path = dest_folder / source_file.filename
-            dest_file = File(dest_path)
+            dest_file = File(dest_path, prefix=self.prefix)
+            # Change filename
+            if self.filename:
+                dest_file.name = self.filename
 
             # Add prefix to filename
-            dest_file.add_prefix(self.prefix, custom_date=source_file.mdate)
+            dest_file.set_prefix(self.prefix, custom_date=source_file.mdate)
 
             # Add destination folder to list of destination folders
             if dest_folder not in dest_folders:
@@ -164,50 +198,51 @@ class Offloader:
 
             # Check for existing files and update filename
             while True:
-                if dest_file.path.is_file():
+                # Check if destination file exists
+                if dest_file.is_file:
                     if dest_file.inc < 1:
                         logging.info("File with the same name exists in destination, comparing checksums")
                     else:
-                        logging.debug(f"File with incremented name {dest_file.filename} exists. Incrementing again")
+                        logging.debug(f"File with incremented name {dest_file.filename} exists, comparing checksums")
 
                     # If checksums are matching
-                    if utils.compare_checksums(source_file.path, dest_file.path):
+                    if utils.compare_checksums(source_file.checksum, dest_file.checksum):
                         logging.warning(f"File ({dest_file.filename}) with matching checksums "
                                         f"already exists in destination, skipping")
                         skipped_files.append(source_file.path)
+                        skip = True
                         break
                     else:
-                        logging.warning(f"File ({dest_file.filename}) with the same name already exists in destination,"
-                                        f" adding incremental")
+                        logging.warning(
+                            f"File ({dest_file.filename}) with the same name already exists in destination,"
+                            f" adding incremental")
                         dest_file.increment_filename()
+                        logging.debug(f'Incremented filename is {dest_file.filename}')
 
                         continue
                 else:
                     break
+
             # Perform file actions
-            if self.dryrun:
-                logging.info("DRYRUN ENABLED, NOT PERFORMING FILE ACTIONS")
-            else:
-                # Create destination folder
-                dest_file.path.parent.mkdir(exist_ok=True, parents=True)
-
-                # Get checksum of source file for verification
-                source_file.update_checksum()
-
-                if self.mode == "copy":
-                    utils.copy_file(source_file.path, dest_file.path)
-
-                elif self.mode == "move":
-                    utils.move_file(source_file.path, dest_file.path)
-
-                logging.info("Verifying transferred file")
-                dest_file.update_checksum()
-
-                if dest_file.checksum == source_file.checksum:
-                    logging.info("File transferred successfully")
+            if not skip:
+                if self.dryrun:
+                    logging.info("DRYRUN ENABLED, NOT PERFORMING FILE ACTIONS")
                 else:
-                    logging.error("File NOT transferred successfully, mismatching checksums")
-                    errored_files.append({source_file.path: "Mismatching checksum after transfer"})
+                    # Create destination folder
+                    dest_file.path.parent.mkdir(exist_ok=True, parents=True)
+
+                    # Copy file
+                    logging.debug(f'{source_file.path} -> {dest_file.path}')
+                    utils.copy_file(source_file.path, dest_file.path)
+                    logging.debug(f'{dest_file.is_file}, {dest_file.checksum}')
+                    logging.info("Verifying transferred file")
+                    if utils.compare_checksums(source_file.checksum, dest_file.checksum):
+                        logging.info("File transferred successfully")
+                        if self.mode == "move":
+                            source_file.delete()
+                    else:
+                        logging.error("File NOT transferred successfully, mismatching checksums")
+                        errored_files.append({source_file.path: "Mismatching checksum after transfer"})
 
             # Add file size to total
             total_transferred_size += source_file.size
@@ -222,11 +257,13 @@ class Offloader:
             bytes_per_second = total_transferred_size / elapsed_time
             logging.info(f"Avg. transfer speed: {utils.convert_size(bytes_per_second)}/s")
 
-            size_remaining = source_list.total_size - total_transferred_size
-            time_remaining = size_remaining / bytes_per_second
+            size_remaining = source_list.size - total_transferred_size
+            if bytes_per_second != 0:
+                time_remaining = size_remaining / bytes_per_second
+            else:
+                time_remaining = 1
             logging.info(f"Size remaining: {utils.convert_size(size_remaining)}")
             logging.info(f"Approx. time remaining: {time.strftime('%-M min %-S sec', time.gmtime(time_remaining))}")
-
             logging.info("---\n")
 
         # Print created destination folders
@@ -249,11 +286,9 @@ class Offloader:
 
 
 class FileList:
-    def __init__(self, directory, exclude=None):
-        self.directory = Path(directory)
-
+    def __init__(self, path, exclude=None):
+        self._path = Path(path)
         self.files = None
-        self.total_size = None
 
         self.exclude = []
         if isinstance(exclude, list):
@@ -262,120 +297,126 @@ class FileList:
             self.exclude.append(exclude)
 
         # Update file list
-        self.update_list()
+        self.update()
 
-    def update_list(self):
+    def update(self):
         """Get list of files in a folder and its subfolders"""
-        # Get file list
-        files = [x for x in self.directory.rglob("*") if x.is_file()]
+        # Get all files in path
+        files = [x for x in self._path.rglob("*") if x.is_file()]
+        logging.debug(f"All files in source: {files}")
 
-        # Remove exlude files
-        self.files = {n: File(x) for n, x in enumerate(files) if x.name not in self.exclude}
+        # Create a dict with all files that aren't in exclude list
+        self.files = {}
+        for n, f in enumerate(files):
+            logging.debug(f.name)
+            if f.name not in self.exclude:
+                self.files[n] = File(f)
+                logging.debug(f"Added {f.name} to file list ({n + 1}/{len(files)})")
 
-        # Update total size
-        self.update_total_size()
-        return True
-
-    def update_total_size(self):
-        self.total_size = sum([y.size for x, y in self.files.items()])
-        return True
+    @property
+    def size(self) -> int:
+        """Return total file size of all files in list"""
+        return sum([y.size for x, y in self.files.items()])
 
 
 class File:
-    def __init__(self, path):
-        self.path = Path(path)
-        self.relative_path = None
-        self.filename = self.path.name
-        self.prefix = None
-        self.name = self.path.stem
-        self.ext = self.path.suffix.strip(".")
+    def __init__(self, path, prefix=None, incremental_padding=3):
+        """File object.
+
+        Args:r
+            path: path to an existing file or a placeholder path for new file
+            prefix: custom prefix or based on a template
+            incremental_padding: the amount of zero's too put before the incremental number
+        """
+        self._path = Path(path)
+        # Discard object if given path is a directory
+        if self._path.is_dir():
+            logging.error(f'{path} is a folder')
+            exit()
+        # Setup attributes
+        self._checksum = ''
+        self._size = 0
+        self._prefix = prefix
+        self._name = self._path.stem
         self.inc = 0
-        self.inc_pad = 3
+        self.inc_pad = incremental_padding
+        self.ext = self._path.suffix.strip('.')
+        self.relative_path = None
 
-        # These variables are None unless file exists
-        self.mtime = None
-        self.mdate = None
-        self.size = 0
-        self.metadata = None
-        self.checksum = None
+    @property
+    def is_file(self):
+        return self.path.is_file()
 
-        # Update with file variables if it exists
-        self.update(checksum=True)
-
-    def update(self, checksum=False, metadata=False):
-        """Update all properties"""
-        self.update_filename()
-        self.update_path()
-        self.update_time()
-        self.update_size()
-
-        if checksum:
-            self.update_checksum()
-        if metadata:
-            self.update_metadata()
-
-    def update_size(self):
-        """Update the size property"""
-        if self.path.is_file():
-            self.size = self.path.stat().st_size
-            return True
-        else:
-            return False
-
-    def update_time(self):
-        """Update the time and date properties"""
-        if self.path.is_file():
-            self.mtime = self.path.stat().st_mtime
-            self.mdate = datetime.fromtimestamp(self.mtime)
-            return True
-        else:
-            return False
-
-    def update_path(self):
-        """Update the path property"""
-        self.path = self.path.parent / self.filename
-        return True
-
-    def update_checksum(self, hashtype="xxhash"):
-        """Get the file checksum"""
-        if self.path.is_file():
-            self.checksum = utils.file_checksum(self.path, hashtype=hashtype)
-            return True
-        else:
-            return False
-
-    def update_filename(self):
+    @property
+    def filename(self):
         """Update the current filename with prefix and padding"""
-        filename = self.name
+        fname = self.name
         if self.prefix:
-            filename = f"{self.prefix}_{filename}"
+            fname = f"{self.prefix}_{fname}"
         if self.inc >= 1:
             inc = utils.pad_number(self.inc, padding=self.inc_pad)
-            filename = f"{filename}_{inc}"
+            fname = f"{fname}_{inc}"
 
-        filename = f"{filename}.{self.ext}"
-        self.filename = filename
+        fname = f"{fname}.{self.ext}"
 
-        return filename
+        return fname
 
-    def update_metadata(self):
+    @property
+    def path(self) -> Path:
+        """Update the path property"""
+        return self._path.parent / self.filename
+
+    @property
+    def checksum(self):
+        if self.is_file:
+            self._checksum = utils.file_checksum(self.path)
+        return self._checksum
+
+    @property
+    def size(self) -> int:
+        """Return the size of the file if it exists"""
+        if self.is_file:
+            self._size = self.path.stat().st_size
+        return self._size
+
+    @property
+    def mdate(self):
+        """Modification date"""
+        return datetime.fromtimestamp(self.mtime)
+
+    @property
+    def mtime(self):
+        """Modification time of the file"""
+        if self.is_file:
+            if self.path.stat().st_mtime:
+                return self.path.stat().st_mtime
+        elif self._path.is_file():
+            if self._path.stat().st_mtime:
+                return self._path.stat().st_mtime
+        return datetime.timestamp(datetime.now())
+
+    @property
+    def metadata(self) -> dict:
         """Get the file metadata using exiftool"""
-        if self.path.is_file():
-            self.metadata = utils.file_metadata(self.path)
-            return True
-        else:
-            return False
+        if self.is_file:
+            return utils.file_metadata(self.path)
+        elif self._path.is_file():
+            return utils.file_metadata(self._path)
+        return {}
 
-    def increment_filename(self, padding=None):
+    def increment_filename(self):
         """Add incremental or count up"""
         self.inc += 1
-        if padding:
-            self.inc_pad = padding
 
-        self.update()
-        return True
+    @property
+    def prefix(self):
+        return self._prefix
 
-    def add_prefix(self, prefix, custom_date=None):
+    @prefix.setter
+    def prefix(self, prefix):
+        self.set_prefix(prefix)
+
+    def set_prefix(self, prefix, custom_date=None):
         if custom_date is None:
             date = self.mdate
         else:
@@ -386,23 +427,16 @@ class File:
                     "offload_date": datetime.now().strftime("%y%m%d")}
 
         if prefixes.get(prefix) or prefix in ("empty", ""):
-            self.prefix = prefixes.get(prefix)
+            self._prefix = prefixes.get(prefix)
         else:
-            self.prefix = prefix
-        self.update()
-        return True
+            self._prefix = prefix
 
-    def add_relative_path(self, relative_to):
-        """Add/update the relative path property"""
-        self.relative_path = self.path.relative_to(relative_to)
-        return True
+    @property
+    def name(self):
+        return self._name
 
-    def change_path(self, path):
-        """Change the path"""
-        self.path = Path(path) / self.filename
-        return True
-
-    def change_name(self, name, validate=True):
+    @name.setter
+    def name(self, name, validate=True):
         """Change the name property. Some presets available:
         - camera_model
         - camera_make"""
@@ -414,16 +448,26 @@ class File:
         }
 
         if presets.get(name):
-            if not self.metadata:
-                self.update_metadata()
             new_name = self.metadata.get(presets[name], "unknown").lower()
 
         if validate:
             new_name = utils.validate_string(new_name)
 
-        self.name = new_name
-        self.update()
+        self._name = new_name
+
+    def set_relative_path(self, relative_to):
+        """Add/update the relative path property"""
+        self.relative_path = self._path.relative_to(relative_to)
         return True
+
+    def change_path(self, path):
+        """Change the path"""
+        self._path = Path(path) / self.filename
+        return True
+
+    def delete(self):
+        if self.path.is_file():
+            self.path.unlink()
 
 
 def cli():

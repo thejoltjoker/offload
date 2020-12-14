@@ -90,7 +90,7 @@ class TestUtils(TestCase):
 
     def test_compare_checksums(self):
         shutil.copy2(self.test_file_source, self.test_file_compare_checksums)
-        self.assertTrue(utils.compare_checksums(self.test_file_source, self.test_file_compare_checksums))
+        self.assertTrue(utils.compare_checksums(utils.checksum_md5(self.test_file_source), utils.checksum_md5(self.test_file_compare_checksums)))
 
     def test_update_recent_paths(self):
         self.fail()
@@ -110,7 +110,6 @@ class TestUtils(TestCase):
 
         test_metadata = utils.file_metadata(self.test_pic_path)
         self.assertTrue(test_metadata.get("EXIF:Make"))
-
 
     def test_pad_number(self):
         self.assertEqual(utils.pad_number(2, padding=3), "002")
@@ -138,8 +137,8 @@ class TestUtils(TestCase):
 
     def test_file_modification_date(self):
         test_file = Path(__file__).parent / "test_pic.jpg"
-        self.assertEqual(utils.file_mod_date(test_file), 1583605293.1676912)
-        self.assertEqual(utils.file_mod_date("test_pic.jpg"), 1583605293.1676912)
+        self.assertEqual(utils.file_mod_date(test_file), 1583605293.0)
+        self.assertEqual(utils.file_mod_date("test_pic.jpg"), 1583605293.0)
 
     def test_destination_folder(self):
         test_file_date = datetime.datetime(2020, 3, 7, 19, 21, 33, 167691)
@@ -157,3 +156,11 @@ class TestUtils(TestCase):
         random_string = utils.random_string(62)
         self.assertIsInstance(random_string, str)
         self.assertEqual(len(random_string), 62)
+
+
+
+    def test_folder_size(self):
+        result = utils.folder_size(Path(__file__).parent)
+        print(utils.convert_size(result))
+        print(result)
+        self.assertIsInstance(result, int)

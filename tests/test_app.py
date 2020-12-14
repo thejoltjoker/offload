@@ -18,6 +18,10 @@ class TestOffloader(TestCase):
             f.write_text(random_string(randint(1, 4096)))
         self.test_destination = Path("test_data/test_destination").resolve()
 
+    def tearDown(self) -> None:
+        rmtree(self.test_source)
+        rmtree(self.test_destination)
+
     def test_offload_default_settings(self):
         ol = Offloader(source=self.test_source,
                        dest=self.test_destination,
@@ -42,6 +46,18 @@ class TestOffloader(TestCase):
 
         self.assertTrue(ol.offload())
 
+    def test_offload_custom_filename(self):
+        ol = Offloader(source=self.test_source,
+                       dest=self.test_destination,
+                       structure="offload_date",
+                       filename="test_name",
+                       prefix=None,
+                       mode="copy",
+                       dryrun=False,
+                       log_level="debug")
+
+        self.assertTrue(ol.offload())
+
 
 class TestFile(TestCase):
     def setUp(self):
@@ -56,6 +72,11 @@ class TestFile(TestCase):
             self.test_file_path.unlink()
         rmtree(self.test_data_path)
 
+    def test_size(self):
+        test_file = File(self.test_pic_path)
+        print(test_file.size)
+        self.assertGreater(test_file.size, 0)
+
     def test_increment_filename(self):
         test_file = File(self.test_file_name)
         self.assertEqual(test_file.filename, "test_file.txt")
@@ -64,8 +85,8 @@ class TestFile(TestCase):
         self.assertEqual(test_file.filename, "test_file_001.txt")
 
         test_file.inc = 52
-        test_file.increment_filename(padding=4)
-        self.assertEqual(test_file.filename, "test_file_0053.txt")
+        test_file.increment_filename()
+        self.assertEqual(test_file.filename, "test_file_053.txt")
 
         test_file.inc_pad = 5
         test_file.increment_filename()
@@ -77,34 +98,33 @@ class TestFile(TestCase):
         self.assertEqual(test_file.filename, "test_pic.jpg")
         self.assertEqual(test_file.prefix, None)
 
-        test_file.add_prefix("hest")
+        test_file.set_prefix('hest')
         self.assertEqual(test_file.filename, "hest_test_pic.jpg")
 
         test_file.prefix = "fest"
-        test_file.update_filename()
         self.assertEqual(test_file.filename, "fest_test_pic.jpg")
 
-        test_file.add_prefix("taken_date")
+        test_file.set_prefix("taken_date")
         self.assertEqual(test_file.filename, "200307_test_pic.jpg")
 
-        test_file.add_prefix("taken_date_time")
+        test_file.set_prefix("taken_date_time")
         self.assertEqual(test_file.prefix, "200307_192133")
         self.assertEqual(test_file.filename, "200307_192133_test_pic.jpg")
 
-        test_file.add_prefix("offload_date")
+        test_file.prefix = "offload_date"
         today = datetime.datetime.now().strftime("%y%m%d")
         self.assertEqual(test_file.filename, f"{today}_test_pic.jpg")
 
-        test_file.add_prefix("empty")
+        test_file.prefix = "empty"
         self.assertEqual(test_file.prefix, None)
 
-        test_file.add_prefix("")
+        test_file.set_prefix("")
         self.assertEqual(test_file.prefix, None)
 
     def test_update_relative_path(self):
         test_file = File(self.test_file_path)
         relative_to = Path(__file__).parent
-        test_file.add_relative_path(relative_to)
+        test_file.set_relative_path(relative_to)
         self.assertEqual(str(test_file.relative_path), "test_data/test_files/test_file.txt")
 
     def test_update_path(self):
@@ -116,28 +136,21 @@ class TestFile(TestCase):
         self.test_file_path.parent.mkdir(exist_ok=True, parents=True)
         self.test_file_path.write_text("test")
         test_file = File(self.test_file_path)
-        test_file.update_checksum()
         self.assertEqual(test_file.checksum, "4fdcca5ddb678139")
 
-    def test_change_name(self):
+    def test_set_name(self):
         test_file = File(self.test_file_path)
-        test_file.change_name("jens")
+        test_file.name = "jens"
         self.assertEqual(test_file.name, "jens")
         self.assertEqual(test_file.filename, "jens.txt")
         self.assertTrue(str(test_file.path).endswith("jens.txt"))
 
-    def test_change_name_using_preset(self):
+    def test_set_name_using_preset(self):
         test_pic = File(self.test_pic_path)
-        test_pic.change_name("camera_model")
+        test_pic.name = "camera_model"
         self.assertEqual(test_pic.filename, "ilce-7m3.jpg")
-
-        test_pic.change_name("camera_make")
+        test_pic.name = 'camera_make'
         self.assertEqual(test_pic.name, "sony")
-
-    def test_update_time(self):
-        self.test_file_path.write_text("test")
-        test_file = File(self.test_file_path)
-        self.assertTrue(test_file.update_time())
 
 
 class TestFileList(TestCase):
@@ -160,4 +173,4 @@ class TestFileList(TestCase):
 
     def test_update_total_size(self):
         test_list = FileList(self.test_directory)
-        self.assertIsInstance(test_list.total_size, int)
+        self.assertIsInstance(test_list.size, int)

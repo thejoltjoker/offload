@@ -79,7 +79,8 @@ def file_checksum(filename, hashtype="xxhash", block_size=65536):
 def checksum_xxhash(file_path, block_size=65536):
     """Get xxhash checksum for a file"""
     if xxhash is None:
-        raise Exception("xxhash not available on this platform.  Try 'pip install xxhash'")
+        raise Exception(
+            "xxhash not available on this platform.  Try 'pip install xxhash'")
     else:
         h = xxhash.xxh64()
 
@@ -171,17 +172,25 @@ def get_file_info(file_path):
     return info
 
 
-def compare_checksums(source, destination, hashtype="xxhash"):
-    source_hash = file_checksum(source, hashtype=hashtype)
-    dest_hash = file_checksum(destination, hashtype=hashtype)
-    if dest_hash == source_hash:
-        logging.info(
-            f"Checksums match: {source_hash} (source) | {dest_hash} (destination)")
+# def compare_checksums(source, destination, hashtype="xxhash"):
+#     source_hash = file_checksum(source, hashtype=hashtype)
+#     dest_hash = file_checksum(destination, hashtype=hashtype)
+#     if dest_hash == source_hash:
+#         logging.info(
+#             f"Checksums match: {source_hash} (source) | {dest_hash} (destination)")
+#         return True
+#     else:
+#         logging.info(
+#             f"Checksums mismatch: {source_hash} (source)| {dest_hash} (destination)")
+#         return False
+
+
+def compare_checksums(a, b):
+    if a == b:
+        logging.info(f"Checksums match: {a} (source) | {b} (destination)")
         return True
-    else:
-        logging.info(
-            f"Checksums mismatch: {source_hash} (source)| {dest_hash} (destination)")
-        return False
+    logging.info(f"Checksums mismatch: {a} (source)| {b} (destination)")
+    return False
 
 
 def update_recent_paths(path):
@@ -247,7 +256,8 @@ def format_file_name(name, ext, prefix=None, incremental=None, padding=3):
         ext = ext[1:]
     if prefix:
         if name.startswith(prefix):
-            logging.debug(f"Filename already starts with {prefix}. Not adding prefix")
+            logging.debug(
+                f"Filename already starts with {prefix}. Not adding prefix")
         else:
             output_filename = f"{prefix}_{output_filename}"
     if incremental:
@@ -265,6 +275,9 @@ def destination_folder(file_date, preset):
 
     if preset == "taken_date":
         # Construct new structure from modification date
+        if file_date is None:
+            logging.warning("File has no date, using today's date")
+            file_date = datetime.today()
         return f"{file_date.year}/{file_date.strftime('%Y-%m-%d')}"
 
     elif preset == "offload_date":
@@ -310,6 +323,12 @@ def validate_string(invalid_string):
     valid_string = "".join(c for c in valid_string if c in valid_chars)
 
     return valid_string
+
+
+def folder_size(path):
+    path = Path(path)
+    size = sum([x.stat().st_size for x in path.rglob("*") if x.is_file()])
+    return size
 
 
 def get_file_list(folder_path, exclude=None):
@@ -362,7 +381,8 @@ def get_file_list(folder_path, exclude=None):
 def exiftool(file_path):
     """Run exiftool in subprocess and return the output"""
     cmd = ['exiftool', '-G', '-j', '-sort', file_path]
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT)
     try:
         outs, errs = proc.communicate(timeout=15)
         return outs.decode("utf-8").strip()

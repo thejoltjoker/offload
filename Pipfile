@@ -9,6 +9,7 @@ autopep8 = "*"
 [packages]
 xxhash = "*"
 pyqt5 = "*"
+psutil = "*"
 
 [requires]
 python_version = "3.7"
