@@ -287,6 +287,12 @@ class Offloader:
 
 class FileList:
     def __init__(self, path, exclude=None):
+        """A list of files as File objects
+
+        Args:
+            path: path to the root directory to scan for files
+            exclude: list of filenames to ignore when adding files to list
+        """
         self._path = Path(path)
         self.files = None
 
@@ -302,28 +308,32 @@ class FileList:
     def update(self):
         """Get list of files in a folder and its subfolders"""
         # Get all files in path
-        files = [x for x in self._path.rglob("*") if x.is_file()]
+        files = [x for x in self._path.rglob("*") if x.is_file() and x.name not in self.exclude]
         logging.debug(f"All files in source: {files}")
 
         # Create a dict with all files that aren't in exclude list
         self.files = {}
         for n, f in enumerate(files):
             logging.debug(f.name)
-            if f.name not in self.exclude:
-                self.files[n] = File(f)
-                logging.debug(f"Added {f.name} to file list ({n + 1}/{len(files)})")
+            self.files[n] = File(f)
+            logging.debug(f"Added {f.name} to file list ({n + 1}/{len(files)})")
 
     @property
     def size(self) -> int:
         """Return total file size of all files in list"""
         return sum([y.size for x, y in self.files.items()])
 
+    @property
+    def count(self) -> int:
+        """Return the number of files in list"""
+        return len(self.files)
+
 
 class File:
     def __init__(self, path, prefix=None, incremental_padding=3):
         """File object.
 
-        Args:r
+        Args:
             path: path to an existing file or a placeholder path for new file
             prefix: custom prefix or based on a template
             incremental_padding: the amount of zero's too put before the incremental number
@@ -345,6 +355,7 @@ class File:
 
     @property
     def is_file(self):
+        """Check if the file exists"""
         return self.path.is_file()
 
     @property
@@ -362,12 +373,57 @@ class File:
         return fname
 
     @property
-    def path(self) -> Path:
-        """Update the path property"""
+    def name(self):
+        """Return the name of the file without prefix, incremental or extension"""
+        return self._name
+
+    @name.setter
+    def name(self, name, validate=True):
+        """Change the name property
+
+        Args:
+            name: the new name of the file. Presets available:
+                - camera_model
+                - camera_make
+            validate: validate filename to make sure it works on all filesystems"""
+
+        new_name = str(name)
+
+        # Set name from exifdata based on a preset
+        presets = {
+            "camera_model": "Model",
+            "camera_make": "Make"
+        }
+
+        if presets.get(name):
+            new_name = self.exifdata.get(presets[name], "unknown").lower()
+
+        # Validate file name and remove/replace illegal characters
+        if validate:
+            new_name = utils.validate_string(new_name)
+
+        self._name = new_name
+
+    @property
+    def path(self):
+        """Return the path property"""
         return self._path.parent / self.filename
+
+    @path.setter
+    def path(self, path):
+        """Change the path"""
+        path = Path(path)
+        if path.is_file():
+            self._path = path.parent / self.filename
+        else:
+            self._path = path / self.filename
 
     @property
     def checksum(self):
+        """Return the xxhash checksum of the file
+
+        Returns: file checksum
+        """
         if self.is_file:
             self._checksum = utils.file_checksum(self.path)
         return self._checksum
@@ -390,33 +446,49 @@ class File:
         if self.is_file:
             if self.path.stat().st_mtime:
                 return self.path.stat().st_mtime
+
         elif self._path.is_file():
             if self._path.stat().st_mtime:
                 return self._path.stat().st_mtime
+
         return datetime.timestamp(datetime.now())
 
     @property
-    def metadata(self) -> dict:
-        """Get the file metadata using exiftool"""
+    def exifdata(self) -> dict:
+        """Get the file exifdata using exiftool"""
         if self.is_file:
-            return utils.file_metadata(self.path)
+            return utils.exifdata(self.path)
         elif self._path.is_file():
-            return utils.file_metadata(self._path)
+            return utils.exifdata(self._path)
         return {}
-
-    def increment_filename(self):
-        """Add incremental or count up"""
-        self.inc += 1
 
     @property
     def prefix(self):
+        """Return the set prefix"""
         return self._prefix
 
     @prefix.setter
     def prefix(self, prefix):
+        """Set a new prefix for the file
+
+        Args:
+            prefix: new prefix value. Presets are:
+                - taken_date: %y%m%d
+                - taken_date_time: %y%m%d_%H%M%S
+                - offload_date: %y%m%d
+        """
         self.set_prefix(prefix)
 
     def set_prefix(self, prefix, custom_date=None):
+        """Set a new prefix for the file
+
+        Args:
+            prefix: new prefix value. Presets are:
+                - taken_date: %y%m%d
+                - taken_date_time: %y%m%d_%H%M%S
+                - offload_date: %y%m%d
+            custom_date: a custom date to use with presets
+        """
         if custom_date is None:
             date = self.mdate
         else:
@@ -431,41 +503,17 @@ class File:
         else:
             self._prefix = prefix
 
-    @property
-    def name(self):
-        return self._name
-
-    @name.setter
-    def name(self, name, validate=True):
-        """Change the name property. Some presets available:
-        - camera_model
-        - camera_make"""
-        new_name = str(name)
-
-        presets = {
-            "camera_model": "EXIF:Model",
-            "camera_make": "EXIF:Make"
-        }
-
-        if presets.get(name):
-            new_name = self.metadata.get(presets[name], "unknown").lower()
-
-        if validate:
-            new_name = utils.validate_string(new_name)
-
-        self._name = new_name
+    def increment_filename(self):
+        """Add incremental or count up"""
+        self.inc += 1
 
     def set_relative_path(self, relative_to):
         """Add/update the relative path property"""
         self.relative_path = self._path.relative_to(relative_to)
-        return True
-
-    def change_path(self, path):
-        """Change the path"""
-        self._path = Path(path) / self.filename
-        return True
+        return self.relative_path
 
     def delete(self):
+        """Delete the file"""
         if self.path.is_file():
             self.path.unlink()
 

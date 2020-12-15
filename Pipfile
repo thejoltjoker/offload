@@ -10,6 +10,7 @@ autopep8 = "*"
 xxhash = "*"
 pyqt5 = "*"
 psutil = "*"
+pillow = "*"
 
 [requires]
 python_version = "3.7"

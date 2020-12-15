@@ -90,7 +90,8 @@ class TestUtils(TestCase):
 
     def test_compare_checksums(self):
         shutil.copy2(self.test_file_source, self.test_file_compare_checksums)
-        self.assertTrue(utils.compare_checksums(utils.checksum_md5(self.test_file_source), utils.checksum_md5(self.test_file_compare_checksums)))
+        self.assertTrue(utils.compare_checksums(utils.checksum_md5(self.test_file_source),
+                                                utils.checksum_md5(self.test_file_compare_checksums)))
 
     def test_update_recent_paths(self):
         self.fail()
@@ -157,10 +158,16 @@ class TestUtils(TestCase):
         self.assertIsInstance(random_string, str)
         self.assertEqual(len(random_string), 62)
 
-
-
     def test_folder_size(self):
         result = utils.folder_size(Path(__file__).parent)
         print(utils.convert_size(result))
         print(result)
         self.assertIsInstance(result, int)
+
+    def test_exifdata(self):
+        result = utils.exifdata(self.test_pic_path)
+        print(result)
+        self.assertIsInstance(result, dict)
+        self.assertTrue(result.get('Make'))
+        result2 = utils.exifdata(self.test_file_source)
+        self.assertFalse(result2.get('Model', False))

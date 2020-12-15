@@ -14,6 +14,9 @@ import subprocess
 import hashlib
 import string
 import random
+from PIL import Image
+from PIL import UnidentifiedImageError
+from PIL.ExifTags import TAGS
 from pathlib import Path
 from pathlib import PosixPath
 from datetime import datetime
@@ -398,6 +401,25 @@ def exiftool_exists():
         return True
     else:
         logging.error("Exiftool could not be found")
+        return False
+
+
+def exifdata(path: Path):
+    """Get exifdata from a picture using pillow"""
+    if is_image_file(path):
+        img = Image.open(path)
+        exifdata = {TAGS.get(k, k): v for k, v in img.getexif().items()}
+        return exifdata
+    return {}
+
+
+def is_image_file(path):
+    """Check if a file is a recognized image file"""
+    try:
+        Image.open(path)
+        return True
+    except UnidentifiedImageError as e:
+        logging.error(f'{path} is not a recognized image file')
         return False
 
 

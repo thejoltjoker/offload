@@ -129,7 +129,7 @@ class TestFile(TestCase):
 
     def test_update_path(self):
         test_file = File(self.test_file_path)
-        test_file.change_path("/test")
+        test_file.path = "/test"
         self.assertEqual(str(test_file.path), "/test/test_file.txt")
 
     def test_update_checksum(self):
