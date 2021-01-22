@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Offload Report</title>
+    <style>
+        html {{
+          box-sizing: border-box;
+          font-size: 12px;
+          white-space: nowrap;
+          font-family: source-code-pro, monospace, sans-serif;
+        }}
+
+        *, *:before, *:after {{
+          box-sizing: inherit;
+        }}
+
+        body, h1, h2, h3, h4, h5, h6, p, ol, ul {{
+          margin: 0;
+          padding: 0;
+          font-weight: normal;
+        }}
+
+        ol, ul {{
+          list-style: none;
+        }}
+
+        img {{
+          max-width: 100%;
+          height: auto;
+        }}
+
+    </style>
+    <link rel="stylesheet" href="https://use.typekit.net/erp7hir.css"/>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta1/dist/css/bootstrap.min.css" rel="stylesheet"
+          integrity="sha384-giJF6kkoqNQ00vy+HMDP7azOuL0xtbfIcaT9wjKHr8RbDVddVHyTfAAsrekwKmP1" crossorigin="anonymous">
+</head>
+<body>
+<div class="container-fluid">
+    <div class="row">
+        <h1>Offload Report {date}</h1>
+    </div>
+    <div class="row">
+        <table class="table table-striped">
+            <thead>
+            <tr>
+                {table_columns}
+            </tr>
+            </thead>
+            <tbody>
+            {table_rows}
+            </tbody>
+        </table>
+    </div>
+</div>
+</body>
+</html>

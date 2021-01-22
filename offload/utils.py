@@ -14,17 +14,40 @@ import subprocess
 import hashlib
 import string
 import random
+import os
+import xxhash
 from PIL import Image
 from PIL import UnidentifiedImageError
 from PIL.ExifTags import TAGS
 from pathlib import Path
 from pathlib import PosixPath
 from datetime import datetime
+from collections import namedtuple
+from offload import APP_DATA_PATH, LOGS_PATH, REPORTS_PATH
 
-try:
-    import xxhash
-except ImportError:
-    xxhash = None
+
+class Preset:
+    @staticmethod
+    def structure(preset):
+        presets = {'taken_date': '{date.year}/{date.strftime("%Y-%m-%d")}',
+                   'offload_date': '{datetime.now().year}/{datetime.now().strftime("%Y-%m-%d")}',
+                   'year': '{date.year}',
+                   'year_month': '{date.year}/{date.strftime("%m")}',
+                   'flat': ''}
+        return presets.get(preset)
+
+    @staticmethod
+    def filename(preset):
+        presets = {'make': 'Make',
+                   'model': 'Model'}
+        return presets.get(preset)
+
+    @staticmethod
+    def prefix(preset):
+        presets = {'taken_date': '{date:%y%m%d}',
+                   'taken_date_time': '{date:%y%m%d_%H%M%S}',
+                   'offload_date': f'{datetime.now():%y%m%d}'}
+        return presets.get(preset)
 
 
 def setup_logger(level="info"):
@@ -47,7 +70,7 @@ def setup_logger(level="info"):
     ch.setLevel(logging.DEBUG)
 
     # Create file handler and set level to debug
-    log_folder = Path(__file__).parent / "logs"
+    log_folder = LOGS_PATH
     log_folder.mkdir(exist_ok=True, parents=True)
     log_filename = f"{datetime.now().strftime('%y%m%d%H%M')}_offload.log"
     fh = logging.FileHandler(log_folder / log_filename, mode='w')
@@ -82,10 +105,9 @@ def file_checksum(filename, hashtype="xxhash", block_size=65536):
 def checksum_xxhash(file_path, block_size=65536):
     """Get xxhash checksum for a file"""
     if xxhash is None:
-        raise Exception(
-            "xxhash not available on this platform.  Try 'pip install xxhash'")
+        raise Exception("xxhash not available on this platform.  Try 'pip install xxhash'")
     else:
-        h = xxhash.xxh64()
+        h = xxhash.xxh3_64()
 
     with open(file_path, "rb") as f:
         for chunk in iter(lambda: f.read(block_size), b""):
@@ -127,13 +149,47 @@ def create_folder(folder):
     return folder
 
 
-def convert_size(size_bytes):
+def time_to_string(seconds):
+    """Return a readable time format"""
+    if seconds == 0:
+        return '0 seconds'
+
+    h, s = divmod(seconds, 3600)
+    m, s = divmod(s, 60)
+    if h != 1:
+        h_s = 'hours'
+    else:
+        h_s = 'hour'
+    if m != 1:
+        m_s = 'minutes'
+    else:
+        m_s = 'minute'
+    if s != 1:
+        s_s = 'seconds'
+    else:
+        s_s = 'second'
+    time_string = ''
+    if h:
+        time_string = f'{int(h)} {h_s}, {int(m)} {m_s} and {int(s)} {s_s}'
+    elif m:
+        time_string = f'{int(m)} {m_s} and {int(s)} {s_s}'
+    else:
+        time_string = f'{int(s)} {s_s}'
+    return time_string
+
+
+def convert_size(size_bytes, binary=False):
     """Convert a file size from bytes to a human readable format"""
     if size_bytes == 0:
         return "0B"
-    size_name = ("B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB")
-    i = int(math.floor(math.log(size_bytes, 1024)))
-    p = math.pow(1024, i)
+    if binary:
+        mult = 1024
+        size_name = ("B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB", "ZiB", "YiB")
+    else:
+        mult = 1000
+        size_name = ("B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB")
+    i = int(math.floor(math.log(size_bytes, mult)))
+    p = math.pow(mult, i)
     s = round(size_bytes / p, 2)
     return f"{s} {size_name[i]}"
 
@@ -144,10 +200,23 @@ def move_file(source, destination):
     return True
 
 
-def copy_file(source, destination):
+def copy_file(source: Path, destination: Path):
     """Copy a file"""
-    shutil.copyfile(source, destination)
+    # shutil.copyfile
+    # shutil.copyfile(source, destination)
+    # pathlib
+    destination.write_bytes(source.read_bytes())
     return True
+
+
+def pathlib_copy(source: Path, destination: Path, chunk_size=262144):
+    """Use pathlib to copy a file"""
+    if source.stat().st_size >= (1024 ** 2 * 64):
+        with source.open('rb') as src, destination.open('wb') as dest:
+            for chunk in iter(lambda: src.read(chunk_size), b''):
+                dest.write(chunk)
+    else:
+        destination.write_bytes(source.read_bytes())
 
 
 def file_mod_date(file_path):
@@ -175,20 +244,12 @@ def get_file_info(file_path):
     return info
 
 
-# def compare_checksums(source, destination, hashtype="xxhash"):
-#     source_hash = file_checksum(source, hashtype=hashtype)
-#     dest_hash = file_checksum(destination, hashtype=hashtype)
-#     if dest_hash == source_hash:
-#         logging.info(
-#             f"Checksums match: {source_hash} (source) | {dest_hash} (destination)")
-#         return True
-#     else:
-#         logging.info(
-#             f"Checksums mismatch: {source_hash} (source)| {dest_hash} (destination)")
-#         return False
-
-
 def compare_checksums(a, b):
+    """Compare two string values to see if they match
+
+    Returns:
+        Bool: True if checksums match, False if they don't
+    """
     if a == b:
         logging.info(f"Checksums match: {a} (source) | {b} (destination)")
         return True
@@ -252,25 +313,6 @@ def pad_number(number, padding=3):
     return padded_number
 
 
-def format_file_name(name, ext, prefix=None, incremental=None, padding=3):
-    """Create a new filename"""
-    output_filename = name
-    if ext.startswith("."):
-        ext = ext[1:]
-    if prefix:
-        if name.startswith(prefix):
-            logging.debug(
-                f"Filename already starts with {prefix}. Not adding prefix")
-        else:
-            output_filename = f"{prefix}_{output_filename}"
-    if incremental:
-        inc = pad_number(incremental, padding=padding)
-        output_filename = f"{output_filename}_{inc}"
-
-    output_filename = f"{output_filename}.{ext}"
-    return output_filename
-
-
 def destination_folder(file_date, preset):
     """Get a destination path depending on the structure setting"""
     # TODO original file structure
@@ -305,6 +347,18 @@ def random_string(length=50):
     chars = string.ascii_letters
     r_int = random.randint
     return "".join([chars[r_int(0, len(chars) - 1)] for x in range(length)])
+
+
+def disk_usage(path: Path, human=False):
+    """Return disk usage statistics about the given path."""
+    DiskUsage = namedtuple('DiskUsage', 'total used free')
+    st = os.statvfs(path)
+    free = st.f_bavail * st.f_frsize
+    total = st.f_blocks * st.f_frsize
+    used = (st.f_blocks - st.f_bfree) * st.f_frsize
+    if human:
+        return DiskUsage(convert_size(total), convert_size(used), convert_size(free))
+    return DiskUsage(total, used, free)
 
 
 def validate_string(invalid_string):
@@ -433,14 +487,3 @@ def file_metadata(file_path):
             return raw_meta
     else:
         return None
-
-
-def main():
-    """docstring for main"""
-    # path = "/Users/johannes/Dropbox/Camera Uploads/2013-08-26 14.34.00.jpg"
-    # pprint(get_metadata(path))
-    print(random_string(256))
-
-
-if __name__ == '__main__':
-    main()

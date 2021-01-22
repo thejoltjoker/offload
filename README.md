@@ -9,9 +9,10 @@ A command line tool for offloading files from memory cards and external drives.
 - File renaming based on date or custom prefix
 - Create a new date based folder structure or use the original one
 
-### Coming soon
-
-- _Transfer reports_
+### Todo
+- presets in gui
+- redo time estimate
+- launch filelist in thread
 
 ## Usage
 
@@ -79,3 +80,7 @@ Sets the prefix according to `%y%m%d` based on the offload date.
 ### Debug log
 
 --debug-log Show the log with debugging messages
+
+
+## Credits
+- Source Sans Pro https://github.com/adobe-fonts/source-sans-pro
