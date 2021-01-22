@@ -108,4 +108,6 @@ venv.bak/
 .vscode
 
 # Other
-offloader/recent_paths.json
+offload/recent_paths.json
+/tests/ol_test_file_a.txt
+/tests/ol_test_file_b.txt
