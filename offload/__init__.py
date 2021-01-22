@@ -1,6 +1,11 @@
 import sys
+import os
 import shutil
 from pathlib import Path
+
+print('')
+print(os.getcwd())
+print('')
 
 if sys.platform == 'darwin':
     APP_DATA_PATH = Path().home() / 'Library/Application Support/Offload'
@@ -8,10 +13,9 @@ elif sys.platform == 'win64':
     APP_DATA_PATH = Path().home() / 'Library/Application Support/Offload'
 else:
     APP_DATA_PATH = Path(__file__).parent
-
 REPORTS_PATH = APP_DATA_PATH / 'reports'
 LOGS_PATH = APP_DATA_PATH / 'logs'
-
+VERSION = '0.1b0'
 EXCLUDE_FILES = ["MEDIAPRO.XML",
                  "Icon",
                  "STATUS.BIN",
@@ -109,5 +113,5 @@ EXCLUDE_FILES = ["MEDIAPRO.XML",
                  "store_generation.\r",
                  ".Spotlight-V100"]
 
-_script_data = Path(__file__).parent / 'data'
+_script_data = Path(os.getcwd()) / 'data'
 shutil.copytree(_script_data, APP_DATA_PATH / 'data', dirs_exist_ok=True)

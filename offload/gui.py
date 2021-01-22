@@ -1,5 +1,5 @@
 """Dialog-Style application."""
-
+import time
 import sys
 import psutil
 import logging
@@ -12,10 +12,11 @@ from PyQt5.QtGui import QIcon, QPixmap, QFontDatabase, QFont
 from PyQt5 import QtCore
 from PyQt5.QtCore import QThread, pyqtSignal
 from pathlib import Path
+
+from offload import VERSION
 from utils import setup_logger, disk_usage
 from app import Offloader
 from app import Settings
-import time
 import utils
 from styles import STYLES, COLORS
 
@@ -123,7 +124,7 @@ class GUI(QWidget):
                     """
 
         # App settings
-        self.setWindowTitle('Offload')
+        self.setWindowTitle(f'Offload {VERSION}')
         self.setWindowIcon(self.style().standardIcon(QStyle.SP_DirLinkIcon))
         # self.setFocusPolicy(QtCore.Qt.NoFocus)
         self.setStyleSheet(self.styles)

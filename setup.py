@@ -5,15 +5,17 @@ Usage:
     python setup.py py2app
 """
 import setuptools
+from pathlib import Path
+from offload import VERSION
 
 APP = ['offload/gui.py']
-DATA_FILES = ['offload/data',
-    # 'offload/data/report_template.html', 'offload/data/fonts/SourceSans3-Bold.otf',
+DATA_FILES = ['data',
+              # 'offload/data/report_template.html', 'offload/data/fonts/SourceSans3-Bold.otf',
               #           'offload/data/fonts/SourceSans3-BoldIt.otf', 'offload/data/fonts/SourceSans3-It.otf',
               #           'offload/data/fonts/SourceSans3-Light.otf', 'offload/data/fonts/SourceSans3-LightIt.otf',
               #           'offload/data/fonts/SourceSans3-Regular.otf'
               ]
-OPTIONS = {'iconfile': 'offload/data/offload.icns'}
+OPTIONS = {'iconfile': 'data/offload.icns'}
 
 with open("README.md", "r") as fh:
     long_description = fh.read()
@@ -30,13 +32,14 @@ setuptools.setup(
         'pillow'
     ],
     name="Offload",  # Replace with your own username
-    version="0.1b",
+    version=VERSION,
     author="Caffeine Creations",
     author_email="contact@caffeine-creations.com",
     description="Transfer files",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/thejoltjoker/offload",
+    packages=['offload', 'tests'],
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",
