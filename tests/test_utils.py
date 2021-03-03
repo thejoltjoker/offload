@@ -1,11 +1,144 @@
 from unittest import TestCase
-import datetime
+import logging
 import os
 import shutil
+from datetime import datetime
 from pathlib import Path
+from shutil import rmtree
+from random import randint
 from offload import utils
-import logging
-utils.setup_logger()
+from offload.utils import File, FileList
+
+utils.setup_logger('debug')
+
+
+class TestFile(TestCase):
+    def setUp(self):
+        self.test_file_name = "test_file.txt"
+        self.test_data_path = Path(__file__).parent / "test_data"
+        self.test_file_path = self.test_data_path / "test_files" / self.test_file_name
+        self.test_pic_path = Path(__file__).parent / "test_pic.jpg"
+        self.test_file_path.parent.mkdir(exist_ok=True, parents=True)
+
+    def tearDown(self):
+        if self.test_file_path.is_file():
+            self.test_file_path.unlink()
+        rmtree(self.test_data_path)
+
+    def test_size(self):
+        test_file = File(self.test_pic_path)
+        print(test_file.size)
+        self.assertGreater(test_file.size, 0)
+
+    def test_increment_filename(self):
+        test_file = File(self.test_file_name)
+        self.assertEqual(test_file.filename, "test_file.txt")
+
+        test_file.increment_filename()
+        self.assertEqual(test_file.filename, "test_file_001.txt")
+
+        test_file.inc = 52
+        test_file.increment_filename()
+        self.assertEqual(test_file.filename, "test_file_053.txt")
+
+        test_file.inc_pad = 5
+        test_file.increment_filename()
+        self.assertEqual(test_file.filename, "test_file_00054.txt")
+
+    def test_add_prefix(self):
+        test_file = File(self.test_pic_path)
+
+        self.assertEqual(test_file.filename, "test_pic.jpg")
+        self.assertEqual(test_file.prefix, None)
+
+        test_file.set_prefix('hest')
+        self.assertEqual(test_file.filename, "hest_test_pic.jpg")
+
+        test_file.prefix = "fest"
+        self.assertEqual(test_file.filename, "fest_test_pic.jpg")
+
+        test_file.set_prefix("taken_date")
+        logging.info(test_file.prefix)
+        logging.info(test_file.path.resolve())
+        self.assertEqual("200307_test_pic.jpg", test_file.filename)
+
+        test_file.set_prefix("taken_date_time")
+        self.assertEqual(test_file.prefix, "200307_192133")
+        self.assertEqual(test_file.filename, "200307_192133_test_pic.jpg")
+
+        logging.debug(f'test_file.prefix = {test_file.prefix}')
+        test_file.prefix = "offload_date"
+        today = datetime.now().strftime("%y%m%d")
+        logging.info(today)
+        logging.info(test_file.filename)
+        self.assertEqual(f"{today}_test_pic.jpg", test_file.filename)
+
+        test_file.prefix = "empty"
+        self.assertEqual(test_file.prefix, None)
+
+        test_file.set_prefix("")
+        self.assertEqual(test_file.prefix, None)
+
+    def test_update_relative_path(self):
+        test_file = File(self.test_file_path)
+        relative_to = Path(__file__).parent
+        test_file.set_relative_path(relative_to)
+        self.assertEqual(str(test_file.relative_path), "test_data/test_files/test_file.txt")
+
+    def test_update_path(self):
+        test_file = File(self.test_file_path)
+        test_file.path = "/test"
+        self.assertEqual(str(test_file.path), "/test/test_file.txt")
+
+    def test_update_checksum(self):
+        self.test_file_path.parent.mkdir(exist_ok=True, parents=True)
+        self.test_file_path.write_text("test")
+        test_file = File(self.test_file_path)
+        self.assertEqual("9ec9f7918d7dfc40", test_file.checksum)
+
+    def test_set_name(self):
+        test_file = File(self.test_file_path)
+        test_file.name = "jens"
+        self.assertEqual(test_file.name, "jens")
+        self.assertEqual(test_file.filename, "jens.txt")
+        self.assertTrue(str(test_file.path).endswith("jens.txt"))
+
+    def test_set_name_using_preset(self):
+        test_pic = File(self.test_pic_path)
+        logging.info(f'Testing set name using preset with file {test_pic._path}')
+        test_pic.name = "camera_model"
+        self.assertEqual(test_pic.filename, "ilce-7m3.jpg")
+        test_pic.name = 'camera_make'
+        self.assertEqual(test_pic.name, "sony")
+
+
+class TestFileList(TestCase):
+    def setUp(self):
+        self.test_directory = Path(__file__).parent / "test_data" / "test_files"
+        self.test_directory.mkdir(exist_ok=True, parents=True)
+
+        # Test files
+        for i in range(100):
+            f = Path(self.test_directory / f"{i:04}.jpg")
+            f.write_text(utils.random_string(randint(1, 4096)))
+
+    def tearDown(self):
+        rmtree(self.test_directory)
+        pass
+
+    def test_get_file_list(self):
+        test_list = FileList(self.test_directory)
+        self.assertEqual(len(test_list.files), 100)
+
+    def test_update_total_size(self):
+        test_list = FileList(self.test_directory)
+        self.assertIsInstance(test_list.size, int)
+
+    def test_sort(self):
+        test_list = FileList(self.test_directory)
+        list_sorted = sorted(test_list.files, key=lambda f: f.mtime)
+        test_list.sort()
+        self.assertEqual(list_sorted, test_list.files)
 
 
 class TestUtils(TestCase):
@@ -56,7 +189,7 @@ class TestUtils(TestCase):
 
     def test_convert_date(self):
         test_timestamp = 1586115849.30226
-        self.assertIsInstance(utils.timestamp_to_datetime(test_timestamp), datetime.datetime)
+        self.assertIsInstance(utils.timestamp_to_datetime(test_timestamp), datetime)
 
     def test_create_folder(self):
         test_folder = self.test_data_path / "test_folder"
@@ -92,7 +225,7 @@ class TestUtils(TestCase):
         self.assertEqual(test_info["name"], self.test_file_source.name)
         self.assertEqual(test_info["path"], self.test_file_source)
         self.assertEqual(test_info["timestamp"], self.test_file_source.stat().st_mtime)
-        self.assertEqual(test_info["date"], datetime.datetime.fromtimestamp(self.test_file_source.stat().st_mtime))
+        self.assertEqual(test_info["date"], datetime.fromtimestamp(self.test_file_source.stat().st_mtime))
         self.assertEqual(test_info["size"], self.test_file_source.stat().st_size)
 
     def test_compare_checksums(self):
@@ -133,8 +266,8 @@ class TestUtils(TestCase):
         self.assertEqual(utils.file_mod_date(test_file), 1583605293.0)
 
     def test_destination_folder(self):
-        test_file_date = datetime.datetime(2020, 3, 7, 19, 21, 33, 167691)
-        today = datetime.datetime.now()
+        test_file_date = datetime(2020, 3, 7, 19, 21, 33, 167691)
+        today = datetime.now()
         # self.assertEqual(utils.destination_folder(test_file_date, preset="original"), "")
         self.assertEqual(utils.destination_folder(test_file_date, preset="taken_date"), "2020/2020-03-07")
         self.assertEqual(utils.destination_folder(test_file_date, preset="offload_date"),
@@ -163,6 +296,16 @@ class TestUtils(TestCase):
         result2 = utils.exifdata(self.test_file_source)
         self.assertFalse(result2.get('Model', False))
 
+    def test_get_camera_make(self):
+        result = utils.get_camera_make(self.test_pic_path)
+        logging.info(result)
+        self.assertIsInstance(result, str)
+        self.assertEqual('SONY', result)
+    def test_get_camera_model(self):
+        result = utils.get_camera_model(self.test_pic_path)
+        logging.info(result)
+        self.assertIsInstance(result, str)
+        self.assertEqual('ILCE-7M3', result)
     def test_pathlib_copy(self):
         source = self.test_data_path / "test_file.txt"
         source.write_bytes(bytes('0' * 1024 ** 2 * 10, 'utf-8'))
@@ -184,3 +327,25 @@ class TestUtils(TestCase):
         self.assertEqual(result, '3 hours, 25 minutes and 34 seconds')
         result = utils.time_to_string(2.44)
         self.assertEqual(result, '2 seconds')
+
+
+class TestPreset(TestCase):
+    def setUp(self) -> None:
+        self.preset = utils.Preset()
+
+    def test_structure(self):
+        self.assertEqual('{date.year}/{date:%Y-%m-%d}', self.preset.structure('taken_date'))
+        self.assertEqual(f'{datetime.now():%Y}/{datetime.now():%Y-%m-%d}', self.preset.structure('offload_date'))
+        self.assertEqual('{date.year}', self.preset.structure('year'))
+        self.assertEqual('{date.year}/{date.strftime("%m")}', self.preset.structure('year_month'))
+        self.assertEqual('', self.preset.structure('flat'))
+
+    def test_filename(self):
+        self.assertIsNone(self.preset.filename('original'))
+        self.assertEqual('Make', self.preset.filename('make'))
+        self.assertEqual('Model', self.preset.filename('model'))
+
+    def test_prefix(self):
+        self.assertEqual('{date:%y%m%d}', self.preset.prefix('taken_date'))
+        self.assertEqual('{date:%y%m%d_%H%M%S}', self.preset.prefix('taken_date_time'))
+        self.assertEqual(f'{datetime.now().strftime("%y%m%d")}', self.preset.prefix('offload_date'))

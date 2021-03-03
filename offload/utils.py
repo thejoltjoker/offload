@@ -29,24 +29,30 @@ from offload import APP_DATA_PATH, LOGS_PATH, REPORTS_PATH
 class Preset:
     @staticmethod
     def structure(preset):
-        presets = {'taken_date': '{date.year}/{date.strftime("%Y-%m-%d")}',
-                   'offload_date': '{datetime.now().year}/{datetime.now().strftime("%Y-%m-%d")}',
+        presets = {'taken_date': '{date.year}/{date:%Y-%m-%d}',
+                   # The datetime needs to be formatted here to prevent KeyError
+                   'offload_date': f'{datetime.now().strftime("%Y")}/{datetime.now().strftime("%Y-%m-%d")}',
+                   'year_month': '{date.year}/{date:%m}',
                    'year': '{date.year}',
-                   'year_month': '{date.year}/{date.strftime("%m")}',
                    'flat': ''}
         return presets.get(preset)
 
     @staticmethod
     def filename(preset):
-        presets = {'make': 'Make',
-                   'model': 'Model'}
+        presets = {'original': None,
+                   'camera_make': 'Make',
+                   'camera_model': 'Model'}
         return presets.get(preset)
 
     @staticmethod
     def prefix(preset):
-        presets = {'taken_date': '{date:%y%m%d}',
+        presets = {'None': None,
+                   '': None,
+                   'empty': None,
+                   'taken_date': '{date:%y%m%d}',
                    'taken_date_time': '{date:%y%m%d_%H%M%S}',
-                   'offload_date': f'{datetime.now():%y%m%d}'}
+                   # The datetime needs to be formatted here to prevent KeyError
+                   'offload_date': f'{datetime.now().strftime("%y%m%d")}'}
         return presets.get(preset)
 
 
@@ -461,17 +467,31 @@ def exiftool_exists():
 def exifdata(path: Path):
     """Get exifdata from a picture using pillow"""
     if is_image_file(path):
-        img = Image.open(path)
-        exifdata = {TAGS.get(k, k): v for k, v in img.getexif().items()}
-        return exifdata
+        with Image.open(path) as img:
+            exifdata = {TAGS.get(k, k): v for k, v in img.getexif().items()}
+            logging.debug(f'Exifdata for {path}')
+            logging.debug(exifdata)
+            return exifdata
     return {}
+
+
+def get_camera_make(path: Path):
+    """Get the camera make from image metadata"""
+    exif = exifdata(path)
+    return exif.get('Make', 'unknown')
+
+
+def get_camera_model(path: Path):
+    """Get the camera model from image metadata"""
+    exif = exifdata(path)
+    return exif.get('Model', 'unknown')
 
 
 def is_image_file(path):
     """Check if a file is a recognized image file"""
     try:
-        Image.open(path)
-        return True
+        with Image.open(path) as img:
+            return True
     except UnidentifiedImageError as e:
         logging.error(f'{path} is not a recognized image file')
         return False
@@ -487,3 +507,424 @@ def file_metadata(file_path):
             return raw_meta
     else:
         return None
+
+
+class FileList:
+    def __init__(self, path, exclude=None):
+        """A list of files as File objects
+
+        Args:
+            path: path to the root directory to scan for files
+            exclude: list of filenames to ignore when adding files to list
+        """
+        self._path = Path(path)
+        self.files = []
+
+        self.exclude = []
+        if isinstance(exclude, list):
+            self.exclude.extend(exclude)
+        elif isinstance(exclude, str):
+            self.exclude.append(exclude)
+
+        # Update file list
+        self.update()
+
+    def sort(self):
+        """Sort list by modification date"""
+        self.files.sort(key=lambda f: f.mtime)
+
+    def update(self):
+        """Get list of files in a folder and its subfolders"""
+        # Get all files in path
+        files = [x for x in self._path.rglob("*") if x.is_file() and x.name not in self.exclude]
+        logging.debug(f"All files in source: {files}")
+
+        # Create a dict with all files that aren't in exclude list
+        for n, f in enumerate(files):
+            logging.debug(f.name)
+            self.files.append(File(f))
+            logging.debug(f"Added {f.name} to file list ({n + 1}/{len(files)})")
+
+    @property
+    def size(self) -> int:
+        """Return total file size of all files in list"""
+        return sum([x.size for x in self.files])
+
+    @property
+    def hsize(self) -> str:
+        return convert_size(self.size)
+
+    @property
+    def count(self) -> int:
+        """Return the number of files in list"""
+        return len(self.files)
+
+    @property
+    def avg_file_size(self) -> int:
+        """Return average file size of files in list"""
+        return int(self.size / self.count)
+
+
+class File:
+    def __init__(self, path, prefix=None, incremental_padding=3):
+        """File object.
+
+        Args:
+            path: path to an existing file or a placeholder path for new file
+            prefix: custom prefix or based on a template
+            incremental_padding: the amount of zero's too put before the incremental number
+        """
+        self._path = Path(path)
+        # Discard object if given path is a directory
+        if self._path.is_dir():
+            logging.error(f'{path} is a folder')
+            exit()
+        # Setup attributes
+        self._checksum = ''
+        self._size = 0
+        self._prefix = prefix
+        self._name = self._path.stem
+        self.inc = 0
+        self.inc_pad = incremental_padding
+        self.ext = self._path.suffix.strip('.')
+        self.relative_path = None
+
+    @property
+    def is_file(self):
+        """Check if the file exists"""
+        exists = self.path.is_file()
+        # if exists:
+        #     logging.debug(f'{self.path} exists')
+        # else:
+        #     logging.debug(f'{self.path} does not exist')
+        return exists
+
+    @property
+    def filename(self):
+        """Update the current filename with prefix and padding"""
+        fname = self.name
+        if self.prefix:
+            fname = f"{self.prefix}_{fname}"
+        if self.inc >= 1:
+            inc = pad_number(self.inc, padding=self.inc_pad)
+            fname = f"{fname}_{inc}"
+
+        fname = f"{fname}.{self.ext}"
+
+        return fname
+
+    @property
+    def name(self):
+        """Return the name of the file without prefix, incremental or extension"""
+        return self._name
+
+    @name.setter
+    def name(self, name, validate=True):
+        """Change the name property
+
+        Args:
+            name: the new name of the file. Presets available:
+                - camera_model
+                - camera_make
+            validate: validate filename to make sure it works on all filesystems"""
+
+        new_name = str(name)
+
+        # Set name from exif data based on a preset
+        preset = Preset()
+        if preset.filename(name):
+            logging.debug(self.exifdata)
+            new_name = self.exifdata.get(preset.filename(name), "unknown").lower()
+
+        # Validate file name and remove/replace illegal characters
+        if validate:
+            new_name = validate_string(new_name)
+
+        self._name = new_name
+
+    @property
+    def path(self):
+        """Return the path property"""
+        return self._path.parent / self.filename
+
+    @path.setter
+    def path(self, path):
+        """Change the path"""
+        path = Path(path)
+        if path.is_file():
+            self._path = path.parent / self.filename
+        else:
+            self._path = path / self.filename
+
+    @property
+    def checksum(self):
+        """Return the xxhash checksum of the file
+
+        Returns: file checksum
+        """
+        if self.is_file:
+            self._checksum = file_checksum(self.path)
+        return self._checksum
+
+    @property
+    def size(self) -> int:
+        """Return the size of the file if it exists"""
+        if self.is_file:
+            self._size = self.path.stat().st_size
+        return self._size
+
+    @property
+    def mdate(self):
+        """Modification date"""
+        return datetime.fromtimestamp(self.mtime)
+
+    @property
+    def mtime(self):
+        """Modification time of the file"""
+        if self.is_file:
+            if self.path.stat().st_mtime:
+                return self.path.stat().st_mtime
+
+        elif self._path.is_file():
+            if self._path.stat().st_mtime:
+                return self._path.stat().st_mtime
+
+        return datetime.timestamp(datetime.now())
+
+    @property
+    def exifdata(self) -> dict:
+        """Get the file exifdata using exiftool"""
+        if self.is_file:
+            return exifdata(self.path)
+        elif self._path.is_file():
+            return exifdata(self._path)
+        return {}
+
+    @property
+    def prefix(self):
+        """Return the set prefix"""
+        return self._prefix
+
+    @prefix.setter
+    def prefix(self, prefix):
+        """Set a new prefix for the file
+
+        Args:
+            prefix: new prefix value. Presets are:
+                - taken_date: %y%m%d
+                - taken_date_time: %y%m%d_%H%M%S
+                - offload_date: %y%m%d
+        """
+        self.set_prefix(prefix)
+
+    def set_prefix(self, prefix, custom_date=None):
+        """Set a new prefix for the file
+
+        Args:
+            prefix: new prefix value. Presets are:
+                - taken_date: %y%m%d
+                - taken_date_time: %y%m%d_%H%M%S
+                - offload_date: %y%m%d
+            custom_date: a custom date to use with presets
+        """
+        # Use file modification date if custom date is none
+        if custom_date is None:
+            date = self.mdate
+        else:
+            date = custom_date
+
+        # Get filename prefix presets
+        logging.debug(f'Given prefix is {prefix}')
+        if Preset.prefix(prefix) or prefix in ('empty', ''):
+            self._prefix = Preset.prefix(prefix)
+            if self._prefix:
+                logging.debug(f'self._prefix = {self._prefix}')
+                self._prefix = self._prefix.format(date=date)
+        else:
+            self._prefix = prefix
+
+    @property
+    def duration(self):
+        """Get duration if possible"""
+        video = cv2.VideoCapture(self._path)
+        duration = video.get(cv2.CAP_PROP_POS_MSEC)
+
+        return duration
+
+    @property
+    def frames(self):
+        """Get frame count"""
+        video = cv2.VideoCapture(self._path)
+        frame_count = video.get(cv2.CAP_PROP_FRAME_COUNT)
+        return frame_count
+
+    def increment_filename(self):
+        """Add incremental or count up"""
+        self.inc += 1
+
+    def set_relative_path(self, relative_to):
+        """Add/update the relative path property"""
+        self.relative_path = self._path.relative_to(relative_to)
+        return self.relative_path
+
+    def delete(self):
+        """Delete the file"""
+        if self.path.is_file():
+            self.path.unlink()
+
+
+class Settings:
+    def __init__(self):
+        """
+        Object for storing and getting offloader settings
+        """
+
+        self._path = APP_DATA_PATH / 'settings.json'
+        self._default_settings = {'latest_destination': str(Path().home().resolve()),
+                                  'default_destination': None,
+                                  'structure': 'taken_date',
+                                  'prefix': 'taken_date',
+                                  'filename': None}
+        self._init_settings()
+
+    def _init_settings(self):
+        """Init settings object"""
+        if not self._path.is_file():
+            with self._path.open('w') as json_file:
+                json.dump(self._default_settings, json_file)
+        else:
+            for k, v in self._default_settings.items():
+                if not self._read_setting(k):
+                    self._write_settings(**{k: v})
+
+    def _write_settings(self, **settings):
+        """Write settings to disk"""
+        current_settings = self._read_settings()
+        for k, v in settings.items():
+            current_settings[k] = str(v)
+
+        with self._path.open('w') as json_file:
+            json.dump(current_settings, json_file)
+
+    def _read_settings(self):
+        """Read settings from disk"""
+        with self._path.open('r') as json_file:
+            json_data = json.load(json_file)
+            return json_data
+
+    def _read_setting(self, setting):
+        """Read settings from disk"""
+        with self._path.open('r') as json_file:
+            json_data = json.load(json_file)
+            value = json_data.get(setting)
+            if value == 'None':
+                value = None
+            return value
+
+    @property
+    def latest_destination(self):
+        """Get latest offload destination
+
+        Returns:
+            Path: path to latest offload destination
+        """
+        dest = self._read_setting('latest_destination')
+        # Return home path if no former destination stored
+        if dest:
+            dest_path = Path(dest)
+        else:
+            dest_path = Path().home()
+        if dest_path.is_dir():
+            return dest_path
+
+        return Path().home()
+
+    @latest_destination.setter
+    def latest_destination(self, path):
+        """Set latest offload destination"""
+        path = Path(path)
+        self._write_settings(latest_destination=str(path.resolve()))
+
+    @property
+    def default_destination(self):
+        """Get default offload destination
+
+        Returns:
+            Path: path to latest offload destination
+        """
+        dest = self._read_setting('default_destination')
+        # Return home path if no former destination stored
+        if dest:
+            dest_path = Path(dest)
+
+            if dest_path.is_dir():
+                return dest_path
+
+        return None
+
+    @default_destination.setter
+    def default_destination(self, path):
+        """Set latest offload destination"""
+        path = Path(path)
+        self._write_settings(default_destination=str(path.resolve()))
+
+    def destination(self):
+        """Get latest offload destination
+
+        Returns:
+            Path: path to latest offload destination
+        """
+        if self.default_destination:
+            return self.default_destination
+        elif self.latest_destination:
+            return self.latest_destination
+
+        return Path().home()
+
+    @property
+    def structure(self):
+        """Get folder structure preset
+
+        Returns:
+            str: a folder structure preset
+        """
+        dest = self._read_setting('structure')
+
+        return dest
+
+    @structure.setter
+    def structure(self, preset: str):
+        """Set folder structure preset"""
+        self._write_settings(structure=preset)
+
+    @property
+    def prefix(self):
+        """Get prefix preset
+
+        Returns:
+            str: a filename prefix preset
+        """
+        prefix = self._read_setting('prefix')
+
+        return prefix
+
+    @prefix.setter
+    def prefix(self, preset: str):
+        """Set prefix preset"""
+        self._write_settings(prefix=preset)
+
+    @property
+    def filename(self):
+        """Get filename preset
+
+        Returns:
+            str: a filename preset
+        """
+        filename = self._read_setting('filename')
+
+        return filename
+
+    @filename.setter
+    def filename(self, preset: str):
+        """Set prefix preset"""
+        self._write_settings(filename=preset)

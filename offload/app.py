@@ -11,76 +11,46 @@ import logging
 import argparse
 import time
 import csv
-import json
 from datetime import datetime
 from pathlib import Path
 from PyQt5.QtCore import QThread, pyqtSignal
 
 from offload import APP_DATA_PATH, REPORTS_PATH, EXCLUDE_FILES, utils
-
-
-class Settings:
-    def __init__(self):
-        """
-        Object for storing and getting offloader settings
-        """
-        self._path = APP_DATA_PATH / 'settings.json'
-        self._default_settings = {'latest_destination': str(Path().home().resolve()),
-                                  'pushbullet': None,
-                                  'folder_structure': 'taken_date',
-                                  'prefix': 'taken_date'}
-        self._init_settings()
-
-    def _init_settings(self):
-        """Init settings object"""
-        if not self._path.is_file():
-            with self._path.open('w') as json_file:
-                json.dump({}, json_file)
-
-    @property
-    def latest_destination(self):
-        """Get latest offload destination
-
-        Returns:
-            Path: path to latest offload destination
-        """
-        dest = self._read_setting('latest_destination')
-        # Return home path if no former destination stored
-        if dest:
-            return Path(dest)
-        else:
-            return Path().home()
-
-    @latest_destination.setter
-    def latest_destination(self, path):
-        """Set latest offload destination"""
-        path = Path(path)
-        self._write_settings(latest_destination=str(path.resolve()))
-
-    def _write_settings(self, **settings):
-        """Write settings to disk"""
-        with self._path.open('w') as json_file:
-            json.dump({k: str(v) for k, v in settings.items()}, json_file)
-
-    def _read_setting(self, setting):
-        """Read settings from disk"""
-        with self._path.open('r') as json_file:
-            json_data = json.load(json_file)
-            return json_data.get(setting)
+from offload.utils import FileList, File, Settings
 
 
 class Offloader(QThread):
     _progress_signal = pyqtSignal(dict)
 
-    def __init__(self, source, dest, structure, filename, prefix, mode, dryrun, log_level):
+    def __init__(self, source, dest,
+                 mode='copy',
+                 structure=None,
+                 filename=None,
+                 prefix=None,
+                 dryrun=False,
+                 log_level='info'):
         super(Offloader, self).__init__()
+        self.settings = Settings()
         self._logger = utils.setup_logger(log_level)
         self._today = datetime.now()
         self._source = Path(source)
         self._destination = Path(dest)
-        self._structure = structure
-        self._filename = filename
-        self._prefix = prefix
+        # Default to settings if not given
+        if structure:
+            self._structure = structure
+        else:
+            self._structure = self.settings.structure
+
+        if filename:
+            self._filename = filename
+        else:
+            self._filename = self.settings.filename
+
+        if prefix:
+            self._prefix = prefix
+        else:
+            self._prefix = self.settings.prefix
+
         self._mode = mode
         self._dryrun = dryrun
         self._exclude = EXCLUDE_FILES
@@ -104,6 +74,17 @@ class Offloader(QThread):
 
         # Report
         self.report = Report()
+
+    def update_from_settings(self):
+        """Update structure, filename and prefix from settings"""
+        self._structure = self.settings.structure
+        logging.debug(f'Folder structure preset is {self._structure}')
+
+        self._filename = self.settings.filename
+        logging.debug(f'Filename preset is {self._filename}')
+
+        self._prefix = self.settings.prefix
+        logging.debug(f'Filename prefix preset is {self._prefix}')
 
     @property
     def source(self):
@@ -189,7 +170,10 @@ class Offloader(QThread):
 
             # Change filename
             if self._filename:
-                dest_file.name = self._filename
+                logging.debug(f'New user given filename is {self._filename}')
+                new_name = source_file.exifdata.get(utils.Preset.filename(self._filename), "unknown").lower()
+                logging.debug(new_name)
+                dest_file.name = new_name
 
             # Add prefix to filename
             dest_file.set_prefix(self._prefix, custom_date=source_file.mdate)
@@ -336,251 +320,6 @@ class Offloader(QThread):
         self.offload()
 
 
-class FileList:
-    def __init__(self, path, exclude=None):
-        """A list of files as File objects
-
-        Args:
-            path: path to the root directory to scan for files
-            exclude: list of filenames to ignore when adding files to list
-        """
-        self._path = Path(path)
-        self.files = []
-
-        self.exclude = []
-        if isinstance(exclude, list):
-            self.exclude.extend(exclude)
-        elif isinstance(exclude, str):
-            self.exclude.append(exclude)
-
-        # Update file list
-        self.update()
-
-    def sort(self):
-        """Sort list by modification date"""
-        self.files.sort(key=lambda f: f.mtime)
-
-    def update(self):
-        """Get list of files in a folder and its subfolders"""
-        # Get all files in path
-        files = [x for x in self._path.rglob("*") if x.is_file() and x.name not in self.exclude]
-        logging.debug(f"All files in source: {files}")
-
-        # Create a dict with all files that aren't in exclude list
-        for n, f in enumerate(files):
-            logging.debug(f.name)
-            self.files.append(File(f))
-            logging.debug(f"Added {f.name} to file list ({n + 1}/{len(files)})")
-
-    @property
-    def size(self) -> int:
-        """Return total file size of all files in list"""
-        return sum([x.size for x in self.files])
-
-    @property
-    def hsize(self) -> str:
-        return utils.convert_size(self.size)
-
-    @property
-    def count(self) -> int:
-        """Return the number of files in list"""
-        return len(self.files)
-
-    @property
-    def avg_file_size(self) -> int:
-        """Return average file size of files in list"""
-        return int(self.size / self.count)
-
-
-class File:
-    def __init__(self, path, prefix=None, incremental_padding=3):
-        """File object.
-
-        Args:
-            path: path to an existing file or a placeholder path for new file
-            prefix: custom prefix or based on a template
-            incremental_padding: the amount of zero's too put before the incremental number
-        """
-        self._path = Path(path)
-        # Discard object if given path is a directory
-        if self._path.is_dir():
-            logging.error(f'{path} is a folder')
-            exit()
-        # Setup attributes
-        self._checksum = ''
-        self._size = 0
-        self._prefix = prefix
-        self._name = self._path.stem
-        self.inc = 0
-        self.inc_pad = incremental_padding
-        self.ext = self._path.suffix.strip('.')
-        self.relative_path = None
-
-    @property
-    def is_file(self):
-        """Check if the file exists"""
-        return self.path.is_file()
-
-    @property
-    def filename(self):
-        """Update the current filename with prefix and padding"""
-        fname = self.name
-        if self.prefix:
-            fname = f"{self.prefix}_{fname}"
-        if self.inc >= 1:
-            inc = utils.pad_number(self.inc, padding=self.inc_pad)
-            fname = f"{fname}_{inc}"
-
-        fname = f"{fname}.{self.ext}"
-
-        return fname
-
-    @property
-    def name(self):
-        """Return the name of the file without prefix, incremental or extension"""
-        return self._name
-
-    @name.setter
-    def name(self, name, validate=True):
-        """Change the name property
-
-        Args:
-            name: the new name of the file. Presets available:
-                - camera_model
-                - camera_make
-            validate: validate filename to make sure it works on all filesystems"""
-
-        new_name = str(name)
-
-        # Set name from exif data based on a preset
-        presets = {
-            "camera_model": "Model",
-            "camera_make": "Make"
-        }
-
-        if presets.get(name):
-            new_name = self.exifdata.get(presets[name], "unknown").lower()
-
-        # Validate file name and remove/replace illegal characters
-        if validate:
-            new_name = utils.validate_string(new_name)
-
-        self._name = new_name
-
-    @property
-    def path(self):
-        """Return the path property"""
-        return self._path.parent / self.filename
-
-    @path.setter
-    def path(self, path):
-        """Change the path"""
-        path = Path(path)
-        if path.is_file():
-            self._path = path.parent / self.filename
-        else:
-            self._path = path / self.filename
-
-    @property
-    def checksum(self):
-        """Return the xxhash checksum of the file
-
-        Returns: file checksum
-        """
-        if self.is_file:
-            self._checksum = utils.file_checksum(self.path)
-        return self._checksum
-
-    @property
-    def size(self) -> int:
-        """Return the size of the file if it exists"""
-        if self.is_file:
-            self._size = self.path.stat().st_size
-        return self._size
-
-    @property
-    def mdate(self):
-        """Modification date"""
-        return datetime.fromtimestamp(self.mtime)
-
-    @property
-    def mtime(self):
-        """Modification time of the file"""
-        if self.is_file:
-            if self.path.stat().st_mtime:
-                return self.path.stat().st_mtime
-
-        elif self._path.is_file():
-            if self._path.stat().st_mtime:
-                return self._path.stat().st_mtime
-
-        return datetime.timestamp(datetime.now())
-
-    @property
-    def exifdata(self) -> dict:
-        """Get the file exifdata using exiftool"""
-        if self.is_file:
-            return utils.exifdata(self.path)
-        elif self._path.is_file():
-            return utils.exifdata(self._path)
-        return {}
-
-    @property
-    def prefix(self):
-        """Return the set prefix"""
-        return self._prefix
-
-    @prefix.setter
-    def prefix(self, prefix):
-        """Set a new prefix for the file
-
-        Args:
-            prefix: new prefix value. Presets are:
-                - taken_date: %y%m%d
-                - taken_date_time: %y%m%d_%H%M%S
-                - offload_date: %y%m%d
-        """
-        self.set_prefix(prefix)
-
-    def set_prefix(self, prefix, custom_date=None):
-        """Set a new prefix for the file
-
-        Args:
-            prefix: new prefix value. Presets are:
-                - taken_date: %y%m%d
-                - taken_date_time: %y%m%d_%H%M%S
-                - offload_date: %y%m%d
-            custom_date: a custom date to use with presets
-        """
-        # Use file modification date if custom date is none
-        if custom_date is None:
-            date = self.mdate
-        else:
-            date = custom_date
-
-        # Get filename prefix presets
-        if utils.Preset.prefix(prefix) or prefix in ('empty', ''):
-            self._prefix = utils.Preset.prefix(prefix)
-            if self._prefix:
-                self._prefix = self._prefix.format(date=date)
-        else:
-            self._prefix = prefix
-
-    def increment_filename(self):
-        """Add incremental or count up"""
-        self.inc += 1
-
-    def set_relative_path(self, relative_to):
-        """Add/update the relative path property"""
-        self.relative_path = self._path.relative_to(relative_to)
-        return self.relative_path
-
-    def delete(self):
-        """Delete the file"""
-        if self.path.is_file():
-            self.path.unlink()
-
-
 class Report:
     def __init__(self, report_format='csv'):
         self._date = datetime.now()
@@ -628,8 +367,6 @@ class Report:
                     table_rows.append(td)
                     line_count += 1
             table_rows = '\n'.join([f'<tr>\n{x}\n</tr>' for x in table_rows])
-        logging.info(table_columns)
-        logging.info(table_rows)
 
         html_report = self.html_template_path.read_text()
         html_report = html_report.format(date=self._date.strftime('%Y-%m-%d %H:%M'),

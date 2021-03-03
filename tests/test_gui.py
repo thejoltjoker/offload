@@ -19,4 +19,5 @@ class TestSettingsDialog(TestCase):
     def test_init(self):
         app = QApplication(sys.argv)
         gui = ogui.SettingsDialog()
+        gui.show()
         sys.exit(app.exec_())

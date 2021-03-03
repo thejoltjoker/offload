@@ -15,7 +15,7 @@ else:
     APP_DATA_PATH = Path(__file__).parent
 REPORTS_PATH = APP_DATA_PATH / 'reports'
 LOGS_PATH = APP_DATA_PATH / 'logs'
-VERSION = '0.1b0'
+VERSION = '0.1.2b0'
 EXCLUDE_FILES = ["MEDIAPRO.XML",
                  "Icon",
                  "STATUS.BIN",
@@ -114,4 +114,5 @@ EXCLUDE_FILES = ["MEDIAPRO.XML",
                  ".Spotlight-V100"]
 
 _script_data = Path(os.getcwd()) / 'data'
+_script_data.mkdir(parents=True, exist_ok=True)
 shutil.copytree(_script_data, APP_DATA_PATH / 'data', dirs_exist_ok=True)

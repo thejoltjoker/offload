@@ -3,7 +3,8 @@ import time
 import sys
 import psutil
 import logging
-from PyQt5.QtWidgets import QApplication, QWidget, QDialog
+from datetime import datetime
+from PyQt5.QtWidgets import QApplication, QWidget, QDialog, QMainWindow
 from PyQt5.QtWidgets import QLineEdit, QPushButton, QLabel, QFileDialog, QProgressBar, QComboBox
 from PyQt5.QtWidgets import QSpacerItem, QSizePolicy, QFrame
 from PyQt5.QtWidgets import QGridLayout, QVBoxLayout, QHBoxLayout, QFormLayout
@@ -13,12 +14,10 @@ from PyQt5 import QtCore
 from PyQt5.QtCore import QThread, pyqtSignal
 from pathlib import Path
 
-from offload import VERSION
-from utils import setup_logger, disk_usage
-from app import Offloader
-from app import Settings
-import utils
-from styles import STYLES, COLORS
+from offload import VERSION, utils
+from offload.utils import setup_logger, disk_usage, Settings, File
+from offload.app import Offloader
+from offload.styles import STYLES, COLORS
 
 setup_logger('debug')
 
@@ -48,7 +47,8 @@ class Timer(QThread):
         print(self.time_left)
         while True:
             self._time_signal.emit(self.time_left)
-            self.time_left -= 1
+            if self.time_left > 0:
+                self.time_left -= 1
             time.sleep(1)
             if not self.running:
                 break
@@ -58,11 +58,13 @@ class SettingsDialog(QDialog):
     def __init__(self):
         super(SettingsDialog, self).__init__()
         self.settings = Settings()
+        self.example_file = File('IMG_01337.RAW')
         self.initUI()
         # Show UI
-        self.show()
+        # self.show()
 
     def initUI(self):
+        self.resize(640, 260)
         fontDB = QFontDatabase()
         fontDB.addApplicationFont(str(Path(__file__).parent / 'data' / 'fonts' / 'SourceSans3-Regular.otf'))
         fontDB.addApplicationFont(str(Path(__file__).parent / 'data' / 'fonts' / 'SourceSans3-Bold.otf'))
@@ -71,25 +73,161 @@ class SettingsDialog(QDialog):
         font.setStyleStrategy(QFont.PreferAntialias)
         self.setFont(font)
 
-        mainLayout = QFormLayout()
-        mainLayout.addRow(QLabel('Latest Destination:'), QLineEdit(str(self.settings.latest_destination)))
+        # mainLayout = QVBoxLayout()
+        mainLayout = QGridLayout()
+        self.destinationLine = QLineEdit(str(self.settings.default_destination))
+        self.destinationLine.textChanged.connect(self.defaultDestinationChange)
+        # mainLayout.addWidget(QLabel('Default Destination:'), 0, 0, 1, 1)
+        # mainLayout.addWidget(self.destinationLine, 0, 1, 1, 2)
 
-        structureLayout = QHBoxLayout()
-        structureLayout.addWidget(QComboBox())
-        structureLayout.addWidget(QComboBox())
-        mainLayout.addRow(QLabel('Folder Structure:'), QComboBox())
-        mainLayout.addRow(QLabel('File Naming:'), QComboBox())
+        # Structure presets
+        self.structureCombo = QComboBox()
+        self.structureOptions = {0: 'original',
+                                 1: 'taken_date',
+                                 2: 'year_month',
+                                 3: 'year',
+                                 4: 'flat'}
+        self.structureCombo.addItem('Keep original')
+        self.structureCombo.addItem('YYYY/YYYY-MM-DD')
+        self.structureCombo.addItem('YYYY/MM')
+        self.structureCombo.addItem('YYYY')
+        self.structureCombo.addItem('Flat')
+
+        # Set current item from settings
+        currentStructure = list(self.structureOptions.values()).index(self.settings.structure)
+        self.structureCombo.setCurrentIndex(currentStructure)
+        # Add to layout and add an action
+        self.structureCombo.currentIndexChanged.connect(self.folderStructureChange)
+        mainLayout.addWidget(QLabel('Folder Structure:'), 1, 0, 1, 1)
+        mainLayout.addWidget(self.structureCombo, 1, 1, 1, 2)
+
+        # Prefix presets
+        self.prefixCombo = QComboBox()
+        self.prefixOptions = {0: 'empty',
+                              1: 'taken_date',
+                              2: 'taken_date_time'}
+        self.prefixCombo.addItem('No prefix')
+        self.prefixCombo.addItem('YYMMDD')
+        self.prefixCombo.addItem('YYMMDD_hhmmss')
+        # Set current item from settings
+        currentPrefix = list(self.prefixOptions.values()).index(self.settings.prefix)
+        self.prefixCombo.setCurrentIndex(currentPrefix)
+        # Connect action
+        self.prefixCombo.currentIndexChanged.connect(self.prefixChange)
+        # Add to layout
+        mainLayout.addWidget(QLabel('Filename prefix:'), 2, 0, 1, 1)
+        mainLayout.addWidget(self.prefixCombo, 2, 1, 1, 2)
+
+        # Filename presets
+        self.filenameCombo = QComboBox()
+        self.filenameOptions = {0: None,
+                                1: 'camera_make',
+                                2: 'camera_model'}
+        self.filenameCombo.addItem('Keep original')
+        self.filenameCombo.addItem('Camera brand')
+        self.filenameCombo.addItem('Camera model')
+        # Set current item from settings
+        if self.settings.filename != 'None':
+            currentFilename = list(self.filenameOptions.values()).index(self.settings.filename)
+        else:
+            currentFilename = 0
+        self.filenameCombo.setCurrentIndex(currentFilename)
+
+        # Connect action
+        self.filenameCombo.currentIndexChanged.connect(self.filenameChange)
+        # Add to layout
+        mainLayout.addWidget(QLabel('Filename:'), 3, 0, 1, 1)
+        mainLayout.addWidget(self.filenameCombo, 3, 1, 1, 2)
+
+        # Filename presets
+        self.exampleLabel = QLabel('/Volumes/mcdaddy/media/photos/2021/2021-02-28/210228_IMG_01337.dng')
+        self.updateExampleLabel()
+        # Add to layout
+        mainLayout.addWidget(QLabel('Example:'), 4, 0, 1, 3)
+        mainLayout.addWidget(self.exampleLabel, 5, 0, 1, 3)
+
+        # Close button
+        self.closeButton = QPushButton('Close')
+        self.closeButton.clicked.connect(self.close)
+        mainLayout.addWidget(self.closeButton, 6, 0, 1, 3)
+
+        # Font
+        fontDB = QFontDatabase()
+        fontDB.addApplicationFont(str(Path(__file__).parent / 'data' / 'fonts' / 'SourceSans3-Regular.otf'))
+        fontDB.addApplicationFont(str(Path(__file__).parent / 'data' / 'fonts' / 'SourceSans3-Bold.otf'))
+        fontDB.addApplicationFont(str(Path(__file__).parent / 'data' / 'fonts' / 'SourceSans3-Light.otf'))
+        font = QFont('Source Sans 3')
+        font.setStyleStrategy(QFont.PreferAntialias)
+        self.setFont(font)
+
+        # Styling
+        self.colors = COLORS
+        self.styles = STYLES
+        self.setStyleSheet(self.styles)
+
         self.setLayout(mainLayout)
 
+    def updateExampleLabel(self):
+        """Update the example label to be correct with the new settings"""
+        label = ''
+        path = Path('/Volumes/Storage/Pictures/IMG_01337.dng')
+        prefix = utils.Preset.prefix(self.settings.prefix)
+        structure = utils.Preset.structure(self.settings.structure)
+        filename = path.name
+        label = f'{path.parent}'
 
-class GUI(QWidget):
+        if structure:
+            subdir = f'{structure.format(date=datetime.now())}'
+            label = f'{label}/{subdir}'
+
+        if self.settings.filename == 'camera_make':
+            filename = 'sony_003.dng'
+        elif self.settings.filename == 'camera_model':
+            filename = 'ilce-7m3_003.dng'
+
+        if prefix:
+            filename = f'{prefix.format(date=datetime.now())}_{filename}'
+
+        label = f'{label}/{filename}'
+        self.exampleLabel.setText(label)
+
+    def defaultDestinationChange(self):
+        self.settings.default_destination = self.destinationLine.text()
+        self.updateExampleLabel()
+        logging.info(f'Default destination changed to {self.settings.default_destination}')
+
+    def folderStructureChange(self):
+        self.settings.structure = self.structureOptions[self.structureCombo.currentIndex()]
+        self.updateExampleLabel()
+        logging.info(f'Folder structure changed to {self.structureOptions[self.structureCombo.currentIndex()]}')
+
+    def filenameChange(self):
+        self.settings.filename = self.filenameOptions[self.filenameCombo.currentIndex()]
+        self.updateExampleLabel()
+        logging.info(f'Filename changed to {self.filenameOptions[self.filenameCombo.currentIndex()]}')
+
+    def prefixChange(self):
+        self.settings.prefix = self.prefixOptions[self.prefixCombo.currentIndex()]
+        self.updateExampleLabel()
+        logging.info(f'Prefix changed to {self.prefixOptions[self.prefixCombo.currentIndex()]}')
+
+
+class MainWindow(QMainWindow):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+
+        # Set central widget
+        self._centralWidget = QWidget(self)
+        self.setCentralWidget(self._centralWidget)
+
         self.offloader = None
         self.settings = Settings()
+
         # Paths
-        # self.sourcePath = None
-        self.sourcePath = Path().home() / 'Desktop' / 'offload' / 'kalla'
+        self.sourcePath = None
+        # self.sourcePath = Path().home()
+
+        # Load smallest drive as source path
         vols = self.volumes()
         if vols:
             smallest_vol = min(vols, key=vols.get)
@@ -97,6 +235,7 @@ class GUI(QWidget):
             if vols[smallest_vol] / 1024 ** 3 < 129:
                 self.sourcePath = Path(smallest_vol)
 
+        # Setup custom font
         fontDB = QFontDatabase()
         fontDB.addApplicationFont(str(Path(__file__).parent / 'data' / 'fonts' / 'SourceSans3-Regular.otf'))
         fontDB.addApplicationFont(str(Path(__file__).parent / 'data' / 'fonts' / 'SourceSans3-Bold.otf'))
@@ -104,8 +243,9 @@ class GUI(QWidget):
         font = QFont('Source Sans 3')
         font.setStyleStrategy(QFont.PreferAntialias)
         self.setFont(font)
+
         self.sourceSize = 0
-        self.destPath = self.settings.latest_destination
+        self.destPath = self.settings.destination()
         self.destSize = 0
         self.iconSize = 48
         self.colors = COLORS
@@ -152,8 +292,13 @@ class GUI(QWidget):
         arrow = QLabel('→')
         arrow.setObjectName('arrow')
         midLayout.addWidget(arrow)
+
+        # Settings
         settingsButton = QPushButton('...')
+        settingsButton.clicked.connect(self.settingsDialog)
         midLayout.addWidget(settingsButton)
+
+        # Add middle layout and spacer
         mainColsLayout.addLayout(midLayout)
         mainColsLayout.addSpacerItem(QSpacerItem(100, 10, QSizePolicy.MinimumExpanding))
 
@@ -220,7 +365,17 @@ class GUI(QWidget):
         # mainLayout.addSpacing(5)
         # mainLayout.addWidget(QTextBrowser())
 
-        self.setLayout(mainLayout)
+        self._centralWidget.setLayout(mainLayout)
+
+    def settingsDialog(self):
+        """Open the settings dialog to make changes to settings"""
+        # app = QApplication(sys.argv)
+        logging.debug(f'Settings dialog opened')
+        settings = SettingsDialog()
+        settings.exec_()
+
+        # Load settings from file
+        # self.offloader.update_from_settings()
 
     def updateProgressBar(self, progress):
         self.progressBar.setValue(int(progress.get('percentage', 0)))
@@ -275,9 +430,9 @@ class GUI(QWidget):
     def initOffloader(self):
         self.offloader = Offloader(source=self.sourcePath,
                                    dest=self.destPath,
-                                   structure='taken_date',
-                                   filename=None,
-                                   prefix='taken_date',
+                                   structure=self.settings.structure,
+                                   filename=self.settings.filename,
+                                   prefix=self.settings.prefix,
                                    mode='copy',
                                    dryrun=False,
                                    log_level='debug')
@@ -416,8 +571,14 @@ class GUI(QWidget):
             return vols
 
 
-if __name__ == '__main__':
+def run():
+    """Run the app"""
     app = QApplication(sys.argv)
     app.setAttribute(QtCore.Qt.AA_UseHighDpiPixmaps)
-    gui = GUI()
+    # app.main = GUI()
+    gui = MainWindow()
     sys.exit(app.exec_())
+
+
+if __name__ == '__main__':
+    run()
