@@ -202,14 +202,15 @@ class Offloader(QThread):
 
                     # Add increment
                     if dest_file.inc < 1:
-                        logging.info("File with the same name exists in destination, comparing checksums")
+                        logging.info("File with the same name exists in destination, comparing attributes")
                     else:
                         logging.debug(
                             f"File with incremented name {dest_file.filename} exists, comparing checksums")
 
                     # If checksums are matching
-                    if utils.compare_checksums(source_file.checksum, dest_file.checksum):
-                        logging.warning(f"File ({dest_file.filename}) with matching checksums "
+                    # if utils.compare_checksums(source_file.checksum, dest_file.checksum):
+                    if utils.compare_files(source_file, dest_file):
+                        logging.warning(f"File ({dest_file.filename}) "
                                         f"already exists in destination, skipping")
                         # Write to report
                         self.report.write(source_file, dest_file, 'Skipped')

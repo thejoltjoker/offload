@@ -217,7 +217,17 @@ class TestUtils(TestCase):
         destination = source.parent / "test_dest" / "test_file.txt"
         destination.parent.mkdir()
         utils.copy_file(source, destination)
-        self.assertEqual(source.stat().st_size, destination.stat().st_size)
+        st = source.stat()
+        for i in dir(st):
+            if i.startswith('st_'):
+                logging.info(i)
+                if i in ['st_birthtime', 'st_ctime', 'st_ctime_ns', 'st_ino']:
+                    self.assertNotEqual(getattr(source.stat(), i), getattr(destination.stat(), i))
+                else:
+                    self.assertEqual(getattr(source.stat(), i), getattr(destination.stat(), i))
+        # self.assertEqual(source.stat().st_size, destination.stat().st_size)
+        # self.assertEqual(source.stat().st_mtime, destination.stat().st_mtime)
+        # self.assertEqual(source.stat().st_ctime, destination.stat().st_ctime)
         self.assertEqual(utils.checksum_md5(source), utils.checksum_md5(destination))
 
     def test_get_file_info(self):
@@ -301,11 +311,13 @@ class TestUtils(TestCase):
         logging.info(result)
         self.assertIsInstance(result, str)
         self.assertEqual('SONY', result)
+
     def test_get_camera_model(self):
         result = utils.get_camera_model(self.test_pic_path)
         logging.info(result)
         self.assertIsInstance(result, str)
         self.assertEqual('ILCE-7M3', result)
+
     def test_pathlib_copy(self):
         source = self.test_data_path / "test_file.txt"
         source.write_bytes(bytes('0' * 1024 ** 2 * 10, 'utf-8'))
@@ -327,6 +339,36 @@ class TestUtils(TestCase):
         self.assertEqual(result, '3 hours, 25 minutes and 34 seconds')
         result = utils.time_to_string(2.44)
         self.assertEqual(result, '2 seconds')
+
+    def test_compare_file_mtime(self):
+        a = self.test_file_source
+        b = self.test_file_dest
+        result = utils.compare_file_mtime(a, b)
+        self.assertFalse(result)
+
+        shutil.copy2(a, b)
+        result = utils.compare_file_mtime(a, b)
+        self.assertTrue(result)
+
+    def test_compare_file_size(self):
+        a = self.test_file_source
+        b = self.test_file_dest
+        result = utils.compare_file_size(a, b)
+        self.assertFalse(result)
+
+        shutil.copy2(a, b)
+        result = utils.compare_file_size(a, b)
+        self.assertTrue(result)
+
+    def test_compare_files(self):
+        a = File(self.test_file_source)
+        b = File(self.test_file_dest)
+        result = utils.compare_files(a, b)
+        self.assertFalse(result)
+
+        shutil.copy2(a.path, b.path)
+        result = utils.compare_files(a, b)
+        self.assertTrue(result)
 
 
 class TestPreset(TestCase):

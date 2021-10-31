@@ -10,7 +10,7 @@ print('')
 if sys.platform == 'darwin':
     APP_DATA_PATH = Path().home() / 'Library/Application Support/Offload'
 elif sys.platform == 'win64':
-    APP_DATA_PATH = Path().home() / 'Library/Application Support/Offload'
+    APP_DATA_PATH = Path().home() / 'AppData\Local\Offload'
 else:
     APP_DATA_PATH = Path(__file__).parent
 REPORTS_PATH = APP_DATA_PATH / 'reports'
