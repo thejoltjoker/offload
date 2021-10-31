@@ -1,3 +1,5 @@
+#!/usr/bin/env sh
+
 # Remove old files
 rm -rf dist build
 
