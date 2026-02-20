@@ -8,6 +8,8 @@ pytest = ">=7.0"
 ruff = ">=0.1.0"
 mypy = ">=1.0"
 pre-commit = ">=3.0"
+py2app = ">=0.28"
+modulegraph = ">=0.19"
 
 [packages]
 xxhash = ">=3.0,<4"

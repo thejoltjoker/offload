@@ -15,7 +15,7 @@ else:
     APP_DATA_PATH = Path(__file__).parent
 REPORTS_PATH = APP_DATA_PATH / "reports"
 LOGS_PATH = APP_DATA_PATH / "logs"
-VERSION = "0.1.2b0"  # x-release-please-version
+VERSION = "0.1.3-beta.0"  # x-release-please-version
 EXCLUDE_FILES = [
     "MEDIAPRO.XML",
     "Icon",
