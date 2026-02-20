@@ -5,7 +5,7 @@ from datetime import datetime
 from pathlib import Path
 from random import randint
 from shutil import rmtree
-from unittest import TestCase
+from unittest import TestCase, skipIf
 
 from offload import utils
 from offload.utils import File, FileList
@@ -253,12 +253,15 @@ class TestUtils(TestCase):
     def test_get_recent_paths(self):
         self.assertIsInstance(utils.get_recent_paths(), list)
 
+    @skipIf(not utils.exiftool_exists(), "exiftool not installed")
     def test_exiftool_exists(self):
         self.assertTrue(utils.exiftool_exists())
 
+    @skipIf(not utils.exiftool_exists(), "exiftool not installed")
     def test_exiftool(self):
         self.assertIsInstance(utils.exiftool(self.test_file_source), str)
 
+    @skipIf(not utils.exiftool_exists(), "exiftool not installed")
     def test_file_metadata(self):
         test_metadata = utils.file_metadata(self.test_pic_path)
         self.assertIsInstance(test_metadata, dict)
