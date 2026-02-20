@@ -37,6 +37,7 @@ from offload.utils import File, Settings, disk_usage, setup_logger
 
 setup_logger("debug")
 
+
 # Resolve fonts dir: py2app uses package/data, dev uses repo data/ or APP_DATA_PATH/data
 def _fonts_dir():
     candidates = [
@@ -64,7 +65,9 @@ def _apply_font(widget):
         font = QFont("Source Sans 3")
     else:
         font = QFont("Helvetica Neue")  # macOS fallback
-        logging.debug("Source Sans 3 not found (add data/fonts/ with .otf files), using Helvetica Neue")
+        logging.debug(
+            "Source Sans 3 not found (add data/fonts/ with .otf files), using Helvetica Neue"
+        )
     font.setStyleStrategy(QFont.PreferAntialias)
     widget.setFont(font)
 
