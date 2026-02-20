@@ -1,4 +1,3 @@
-# Build the Offload .app, zip it, and attach to the release when one is published.
 name: Build and attach release asset
 
 on:
