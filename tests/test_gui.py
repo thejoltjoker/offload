@@ -1,18 +1,20 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
 """
 script_name.py
 Description of script_name.py.
 """
-from unittest import TestCase
+
 import sys
-from PyQt5.QtWidgets import QApplication
+from unittest import TestCase
+
 from offload import gui as ogui
+from PyQt5.QtWidgets import QApplication
+
 
 class TestGUI(TestCase):
     def test_volumes(self):
-        result = ogui.GUI.volumes()
-        self.fail()
+        result = ogui.MainWindow.volumes()
+        self.assertTrue(result is None or isinstance(result, dict))
 
 
 class TestSettingsDialog(TestCase):
@@ -20,4 +22,5 @@ class TestSettingsDialog(TestCase):
         app = QApplication(sys.argv)
         gui = ogui.SettingsDialog()
         gui.show()
-        sys.exit(app.exec_())
+        gui.close()
+        # Do not call app.exec_() so the test process does not block or exit

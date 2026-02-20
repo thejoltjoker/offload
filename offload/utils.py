@@ -1,58 +1,59 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
 """
 script_name.py
 Description of script_name.py.
 """
 
-import logging
-import shutil
-import math
-import time
-import json
-import subprocess
 import hashlib
-import string
-import random
+import json
+import logging
+import math
 import os
-import xxhash
-from PIL import Image
-from PIL import UnidentifiedImageError
-from PIL.ExifTags import TAGS
-from pathlib import Path
-from pathlib import PosixPath
-from datetime import datetime
+import random
+import shutil
+import string
+import subprocess
+import time
 from collections import namedtuple
-from offload import APP_DATA_PATH, LOGS_PATH, REPORTS_PATH
+from datetime import datetime
+from pathlib import Path
+
+import xxhash
+from PIL import Image, UnidentifiedImageError
+from PIL.ExifTags import TAGS
+
+from offload import APP_DATA_PATH, LOGS_PATH
 
 
 class Preset:
     @staticmethod
     def structure(preset):
-        presets = {'taken_date': '{date.year}/{date:%Y-%m-%d}',
-                   # The datetime needs to be formatted here to prevent KeyError
-                   'offload_date': f'{datetime.now().strftime("%Y")}/{datetime.now().strftime("%Y-%m-%d")}',
-                   'year_month': '{date.year}/{date:%m}',
-                   'year': '{date.year}',
-                   'flat': ''}
+        presets = {
+            "taken_date": "{date.year}/{date:%Y-%m-%d}",
+            # The datetime needs to be formatted here to prevent KeyError
+            "offload_date": f"{datetime.now().strftime('%Y')}/{datetime.now().strftime('%Y-%m-%d')}",
+            "year_month": "{date.year}/{date:%m}",
+            "year": "{date.year}",
+            "flat": "",
+        }
         return presets.get(preset)
 
     @staticmethod
     def filename(preset):
-        presets = {'original': None,
-                   'camera_make': 'Make',
-                   'camera_model': 'Model'}
+        presets = {"original": None, "camera_make": "Make", "camera_model": "Model"}
         return presets.get(preset)
 
     @staticmethod
     def prefix(preset):
-        presets = {'None': None,
-                   '': None,
-                   'empty': None,
-                   'taken_date': '{date:%y%m%d}',
-                   'taken_date_time': '{date:%y%m%d_%H%M%S}',
-                   # The datetime needs to be formatted here to prevent KeyError
-                   'offload_date': f'{datetime.now().strftime("%y%m%d")}'}
+        presets = {
+            "None": None,
+            "": None,
+            "empty": None,
+            "taken_date": "{date:%y%m%d}",
+            "taken_date_time": "{date:%y%m%d_%H%M%S}",
+            # The datetime needs to be formatted here to prevent KeyError
+            "offload_date": f"{datetime.now().strftime('%y%m%d')}",
+        }
         return presets.get(preset)
 
 
@@ -124,16 +125,16 @@ class File:
         self._path = Path(path)
         # Discard object if given path is a directory
         if self._path.is_dir():
-            logging.error(f'{path} is a folder')
+            logging.error(f"{path} is a folder")
             exit()
         # Setup attributes
-        self._checksum = ''
+        self._checksum = ""
         self._size = 0
         self._prefix = prefix
         self._name = self._path.stem
         self.inc = 0
         self.inc_pad = incremental_padding
-        self.ext = self._path.suffix.strip('.')
+        self.ext = self._path.suffix.strip(".")
         self.relative_path = None
 
     @property
@@ -294,11 +295,11 @@ class File:
             date = custom_date
 
         # Get filename prefix presets
-        logging.debug(f'Given prefix is {prefix}')
-        if Preset.prefix(prefix) or prefix in ('empty', ''):
+        logging.debug(f"Given prefix is {prefix}")
+        if Preset.prefix(prefix) or prefix in ("empty", ""):
             self._prefix = Preset.prefix(prefix)
             if self._prefix:
-                logging.debug(f'self._prefix = {self._prefix}')
+                logging.debug(f"self._prefix = {self._prefix}")
                 self._prefix = self._prefix.format(date=date)
         else:
             self._prefix = prefix
@@ -339,18 +340,20 @@ class Settings:
         Object for storing and getting offloader settings
         """
 
-        self._path = APP_DATA_PATH / 'settings.json'
-        self._default_settings = {'latest_destination': str(Path().home().resolve()),
-                                  'default_destination': None,
-                                  'structure': 'taken_date',
-                                  'prefix': 'taken_date',
-                                  'filename': None}
+        self._path = APP_DATA_PATH / "settings.json"
+        self._default_settings = {
+            "latest_destination": str(Path().home().resolve()),
+            "default_destination": None,
+            "structure": "taken_date",
+            "prefix": "taken_date",
+            "filename": None,
+        }
         self._init_settings()
 
     def _init_settings(self):
         """Init settings object"""
         if not self._path.is_file():
-            with self._path.open('w') as json_file:
+            with self._path.open("w") as json_file:
                 json.dump(self._default_settings, json_file)
         else:
             for k, v in self._default_settings.items():
@@ -363,21 +366,21 @@ class Settings:
         for k, v in settings.items():
             current_settings[k] = str(v)
 
-        with self._path.open('w') as json_file:
+        with self._path.open("w") as json_file:
             json.dump(current_settings, json_file)
 
     def _read_settings(self):
         """Read settings from disk"""
-        with self._path.open('r') as json_file:
+        with self._path.open("r") as json_file:
             json_data = json.load(json_file)
             return json_data
 
     def _read_setting(self, setting):
         """Read settings from disk"""
-        with self._path.open('r') as json_file:
+        with self._path.open("r") as json_file:
             json_data = json.load(json_file)
             value = json_data.get(setting)
-            if value == 'None':
+            if value == "None":
                 value = None
             return value
 
@@ -388,7 +391,7 @@ class Settings:
         Returns:
             Path: path to latest offload destination
         """
-        dest = self._read_setting('latest_destination')
+        dest = self._read_setting("latest_destination")
         # Return home path if no former destination stored
         if dest:
             dest_path = Path(dest)
@@ -412,7 +415,7 @@ class Settings:
         Returns:
             Path: path to latest offload destination
         """
-        dest = self._read_setting('default_destination')
+        dest = self._read_setting("default_destination")
         # Return home path if no former destination stored
         if dest:
             dest_path = Path(dest)
@@ -448,7 +451,7 @@ class Settings:
         Returns:
             str: a folder structure preset
         """
-        dest = self._read_setting('structure')
+        dest = self._read_setting("structure")
 
         return dest
 
@@ -464,7 +467,7 @@ class Settings:
         Returns:
             str: a filename prefix preset
         """
-        prefix = self._read_setting('prefix')
+        prefix = self._read_setting("prefix")
 
         return prefix
 
@@ -480,7 +483,7 @@ class Settings:
         Returns:
             str: a filename preset
         """
-        filename = self._read_setting('filename')
+        filename = self._read_setting("filename")
 
         return filename
 
@@ -498,11 +501,11 @@ def setup_logger(level="info"):
     if logger.hasHandlers():
         logger.handlers.clear()
 
-    if level == 'debug':
+    if level == "debug":
         logger.setLevel(logging.DEBUG)
-    elif level == 'info':
+    elif level == "info":
         logger.setLevel(logging.INFO)
-    elif level == 'error':
+    elif level == "error":
         logger.setLevel(logging.ERROR)
 
     # Create console handler and set level to debug
@@ -513,12 +516,11 @@ def setup_logger(level="info"):
     log_folder = LOGS_PATH
     log_folder.mkdir(exist_ok=True, parents=True)
     log_filename = f"{datetime.now().strftime('%y%m%d%H%M')}_offload.log"
-    fh = logging.FileHandler(log_folder / log_filename, mode='w')
+    fh = logging.FileHandler(log_folder / log_filename, mode="w")
     fh.setLevel(logging.DEBUG)
 
     # Create formatter
-    formatter = logging.Formatter(
-        '%(asctime)s - %(name)s - %(levelname)-8s - %(message)s')
+    formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)-8s - %(message)s")
 
     # Add formatter
     ch.setFormatter(formatter)
@@ -592,29 +594,29 @@ def create_folder(folder):
 def time_to_string(seconds):
     """Return a readable time format"""
     if seconds == 0:
-        return '0 seconds'
+        return "0 seconds"
 
     h, s = divmod(seconds, 3600)
     m, s = divmod(s, 60)
     if h != 1:
-        h_s = 'hours'
+        h_s = "hours"
     else:
-        h_s = 'hour'
+        h_s = "hour"
     if m != 1:
-        m_s = 'minutes'
+        m_s = "minutes"
     else:
-        m_s = 'minute'
+        m_s = "minute"
     if s != 1:
-        s_s = 'seconds'
+        s_s = "seconds"
     else:
-        s_s = 'second'
-    time_string = ''
+        s_s = "second"
+    time_string = ""
     if h:
-        time_string = f'{int(h)} {h_s}, {int(m)} {m_s} and {int(s)} {s_s}'
+        time_string = f"{int(h)} {h_s}, {int(m)} {m_s} and {int(s)} {s_s}"
     elif m:
-        time_string = f'{int(m)} {m_s} and {int(s)} {s_s}'
+        time_string = f"{int(m)} {m_s} and {int(s)} {s_s}"
     else:
-        time_string = f'{int(s)} {s_s}'
+        time_string = f"{int(s)} {s_s}"
     return time_string
 
 
@@ -655,9 +657,9 @@ def copy_file(source: Path, destination: Path):
 
 def pathlib_copy(source: Path, destination: Path, chunk_size=262144):
     """Use pathlib to copy a file"""
-    if source.stat().st_size >= (1024 ** 2 * 64):
-        with source.open('rb') as src, destination.open('wb') as dest:
-            for chunk in iter(lambda: src.read(chunk_size), b''):
+    if source.stat().st_size >= (1024**2 * 64):
+        with source.open("rb") as src, destination.open("wb") as dest:
+            for chunk in iter(lambda: src.read(chunk_size), b""):
                 dest.write(chunk)
     else:
         destination.write_bytes(source.read_bytes())
@@ -681,7 +683,7 @@ def get_file_info(file_path):
         "path": file_path,
         "timestamp": file_timestamp,
         "date": datetime.fromtimestamp(file_timestamp),
-        "size": file_path.stat().st_size
+        "size": file_path.stat().st_size,
     }
 
     return info
@@ -713,12 +715,16 @@ def compare_file_mtime(a, b):
     path_a = Path(a)
     path_b = Path(b)
     if path_a.stat().st_mtime == path_b.stat().st_mtime:
-        logging.debug(f'{path_a.name}({path_a.stat().st_mtime}) and {path_b.name}({path_b.stat().st_mtime}) '
-                      f'have the same modification time')
+        logging.debug(
+            f"{path_a.name}({path_a.stat().st_mtime}) and {path_b.name}({path_b.stat().st_mtime}) "
+            f"have the same modification time"
+        )
         return True
 
-    logging.debug(f'{path_a.name}({path_a.stat().st_mtime}) and {path_b.name}({path_b.stat().st_mtime}) '
-                  f'don\'t have the same modification time')
+    logging.debug(
+        f"{path_a.name}({path_a.stat().st_mtime}) and {path_b.name}({path_b.stat().st_mtime}) "
+        f"don't have the same modification time"
+    )
     return False
 
 
@@ -738,10 +744,12 @@ def compare_file_size(a, b):
         if path_a.stat().st_size == path_b.stat().st_size:
             # logging.debug(f'{path_a.stat().st_size} | {path_b.stat().st_size}')
             logging.debug(
-                f'{path_a.name}({path_a.stat().st_size}) and {path_b.name}({path_b.stat().st_size}) are the same size')
+                f"{path_a.name}({path_a.stat().st_size}) and {path_b.name}({path_b.stat().st_size}) are the same size"
+            )
             return True
     logging.debug(
-        f'{path_a.name}({path_a.stat().st_size}) and {path_b.name}({path_b.stat().st_size}) are NOT the same size')
+        f"{path_a.name}({path_a.stat().st_size}) and {path_b.name}({path_b.stat().st_size}) are NOT the same size"
+    )
     return False
 
 
@@ -750,13 +758,15 @@ def compare_files(a: File, b: File):
     b_path = Path(b.path)
     if a.size == b.size:
         logging.info(f"Sizes match: {a.size} (source) | {b.size} (destination)")
-        logging.debug(f'ctime - {a.ctime} | {b.ctime}')
-        logging.debug(f'mtime - {a.mtime} | {b.mtime}')
+        logging.debug(f"ctime - {a.ctime} | {b.ctime}")
+        logging.debug(f"mtime - {a.mtime} | {b.mtime}")
         if a.mtime == b.mtime:
             logging.info(f"Modification times match: {a.mtime} (source) | {b.mtime} (destination)")
             return True
         else:
-            logging.info(f"Modification times mismatch: {a.mtime} (source) | {b.mtime} (destination)")
+            logging.info(
+                f"Modification times mismatch: {a.mtime} (source) | {b.mtime} (destination)"
+            )
     else:
         logging.info(f"Sizes mismatch: {a.size} (source) | {b.size} (destination)")
 
@@ -775,7 +785,7 @@ def update_recent_paths(path):
     try:
         with output_path.open("r") as file:
             recent_paths = json.load(file)
-    except FileNotFoundError as e:
+    except FileNotFoundError:
         pass
 
     # Remove path from list
@@ -860,7 +870,7 @@ def random_string(length=50):
 
 def disk_usage(path: Path, human=False):
     """Return disk usage statistics about the given path."""
-    DiskUsage = namedtuple('DiskUsage', 'total used free')
+    DiskUsage = namedtuple("DiskUsage", "total used free")
     st = os.statvfs(path)
     free = st.f_bavail * st.f_frsize
     total = st.f_blocks * st.f_frsize
@@ -874,15 +884,7 @@ def validate_string(invalid_string):
     """Replace or remove invalid characters in a string"""
     valid_string = str(invalid_string)
     valid_chars = f"-_.{string.ascii_letters}{string.digits}"
-    char_table = {
-        "å": "a",
-        "ä": "a",
-        "ö": "o",
-        "Å": "A",
-        "Ä": "A",
-        "Ö": "O",
-        " ": "_"
-    }
+    char_table = {"å": "a", "ä": "a", "ö": "o", "Å": "A", "Ä": "A", "Ö": "O", " ": "_"}
     for k, v in char_table.items():
         valid_string = valid_string.replace(k, v)
 
@@ -932,13 +934,13 @@ def get_file_list(folder_path, exclude=None):
             file_id += 1
 
             logging.info(f"{file_id - 1} files collected")
-            logging.info(
-                f"Total size collected: {convert_size(total_file_size)}")
+            logging.info(f"Total size collected: {convert_size(total_file_size)}")
 
     elapsed_time = time.time() - start_time
 
     logging.info(
-        f"Collected file info for {len(file_list)} files in {time.strftime('%-S seconds', time.gmtime(elapsed_time))}")
+        f"Collected file info for {len(file_list)} files in {time.strftime('%-S seconds', time.gmtime(elapsed_time))}"
+    )
     logging.info(f"Total size collected: {convert_size(total_file_size)}")
 
     return file_list
@@ -946,9 +948,8 @@ def get_file_list(folder_path, exclude=None):
 
 def exiftool(file_path):
     """Run exiftool in subprocess and return the output"""
-    cmd = ['exiftool', '-G', '-j', '-sort', file_path]
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
-                            stderr=subprocess.STDOUT)
+    cmd = ["exiftool", "-G", "-j", "-sort", file_path]
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     try:
         outs, errs = proc.communicate(timeout=15)
         return outs.decode("utf-8").strip()
@@ -972,7 +973,7 @@ def exifdata(path: Path):
     if is_image_file(path):
         with Image.open(path) as img:
             exifdata = {TAGS.get(k, k): v for k, v in img.getexif().items()}
-            logging.debug(f'Exifdata for {path}')
+            logging.debug(f"Exifdata for {path}")
             logging.debug(exifdata)
             return exifdata
     return {}
@@ -981,13 +982,13 @@ def exifdata(path: Path):
 def get_camera_make(path: Path):
     """Get the camera make from image metadata"""
     exif = exifdata(path)
-    return exif.get('Make', 'unknown')
+    return exif.get("Make", "unknown")
 
 
 def get_camera_model(path: Path):
     """Get the camera model from image metadata"""
     exif = exifdata(path)
-    return exif.get('Model', 'unknown')
+    return exif.get("Model", "unknown")
 
 
 def is_image_file(path):
@@ -995,8 +996,8 @@ def is_image_file(path):
     try:
         with Image.open(path) as img:
             return True
-    except UnidentifiedImageError as e:
-        logging.error(f'{path} is not a recognized image file')
+    except UnidentifiedImageError:
+        logging.error(f"{path} is not a recognized image file")
         return False
 
 

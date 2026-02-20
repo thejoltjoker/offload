@@ -4,14 +4,17 @@ url = "https://pypi.org/simple"
 verify_ssl = true
 
 [dev-packages]
-autopep8 = "*"
+pytest = ">=7.0"
+ruff = ">=0.1.0"
+mypy = ">=1.0"
+pre-commit = ">=3.0"
 
 [packages]
-xxhash = "*"
-pyqt5 = "*"
-psutil = "*"
-pillow = "*"
+xxhash = ">=3.0,<4"
+pyqt5 = ">=5.15"
+psutil = ">=5.9"
+pillow = ">=10.0"
 setuptools = "*"
 
 [requires]
-python_version = "3.9"
+python_version = "3.12"

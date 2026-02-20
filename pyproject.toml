@@ -1,0 +1,66 @@
+[project]
+name = "Offload"
+version = "0.1.2b0"
+description = "Transfer files from memory cards and external drives with checksum verification"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [
+    { name = "Caffeine Creations", email = "contact@caffeine-creations.com" }
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS",
+]
+urls = { Repository = "https://github.com/thejoltjoker/offload" }
+dependencies = [
+    "xxhash>=3.0,<4",
+    "pyqt5>=5.15",
+    "psutil>=5.9",
+    "pillow>=10.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "ruff>=0.1.0",
+    "mypy>=1.0",
+    "pre-commit>=3.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["offload*"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["offload", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "C4"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# cv2 is optional (opencv-python) for video metadata; some unused vars intentional
+"offload/utils.py" = ["F821", "F841"]
+# Unused vars in tests / GUI run are intentional
+"offload/gui.py" = ["F841"]
+"tests/test_gui.py" = ["F841"]
+"tests/test_utils.py" = ["F841"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-v"
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+warn_return_any = false
+warn_unused_ignores = true

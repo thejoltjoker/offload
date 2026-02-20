@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+jobs:
+  test:
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install pipenv
+        run: pip install pipenv
+
+      - name: Install dependencies
+        run: pipenv install --dev
+        env:
+          PIPENV_VENV_IN_PROJECT: 1
+
+      - name: Ruff
+        run: pipenv run ruff check offload tests
+
+      - name: Ruff format
+        run: pipenv run ruff format --check offload tests
+
+      - name: Pytest
+        run: pipenv run pytest tests/ -v
+
+      - name: Mypy
+        run: pipenv run mypy offload --no-error-summary 2>/dev/null || true

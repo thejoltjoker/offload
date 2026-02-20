@@ -45,5 +45,5 @@ setuptools.setup(
         "License :: OSI Approved :: MIT License",
         "Operating System :: MacOS",
     ],
-    python_requires='>=3.9',
+    python_requires='>=3.12',
 )
