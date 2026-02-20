@@ -390,6 +390,87 @@ class TestUtils(TestCase):
         result = utils.compare_files(a, b)
         self.assertTrue(result)
 
+    def test_pathlib_copy_with_checksum_content_and_returned_hashes(self):
+        """Copy-with-hash: size, returned hashes match full-file checksums and each other."""
+        source = self.test_data_path / "copy_src.txt"
+        dest = self.test_data_path / "copy_dest" / "copy_dest.txt"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        source.write_bytes(b"hello world")
+        src_hash, dest_hash = utils.pathlib_copy_with_checksum(source, dest)
+        self.assertEqual(source.stat().st_size, dest.stat().st_size)
+        self.assertEqual(src_hash, utils.checksum_xxhash(source))
+        self.assertEqual(dest_hash, utils.checksum_xxhash(dest))
+        self.assertEqual(src_hash, dest_hash)
+        self.assertEqual(dest.read_bytes(), source.read_bytes())
+
+    def test_pathlib_copy_with_checksum_empty_file(self):
+        source = self.test_data_path / "empty_src.txt"
+        dest = self.test_data_path / "empty_dest.txt"
+        source.write_bytes(b"")
+        src_hash, dest_hash = utils.pathlib_copy_with_checksum(source, dest)
+        self.assertEqual(source.stat().st_size, 0)
+        self.assertEqual(dest.stat().st_size, 0)
+        self.assertEqual(src_hash, dest_hash)
+        self.assertEqual(src_hash, utils.checksum_xxhash(source))
+        self.assertEqual(dest_hash, utils.checksum_xxhash(dest))
+
+    def test_pathlib_copy_with_checksum_large_file_multichunk(self):
+        """Large file (multi-chunk) and odd size not multiple of chunk."""
+        source = self.test_data_path / "large_src.bin"
+        dest = self.test_data_path / "large_dest.bin"
+        size = (1024**2 * 70) + 12345
+        source.write_bytes(bytes(size))
+        src_hash, dest_hash = utils.pathlib_copy_with_checksum(source, dest)
+        self.assertEqual(source.stat().st_size, size)
+        self.assertEqual(dest.stat().st_size, size)
+        self.assertEqual(src_hash, utils.checksum_xxhash(source))
+        self.assertEqual(dest_hash, utils.checksum_xxhash(dest))
+        self.assertEqual(src_hash, dest_hash)
+
+    def test_pathlib_copy_with_checksum_metadata(self):
+        """Destination has same mtime, atime, mode as source after copystat."""
+        source = self.test_data_path / "meta_src.txt"
+        dest = self.test_data_path / "meta_dest.txt"
+        source.write_bytes(b"meta test")
+        source.chmod(0o644)
+        utils.pathlib_copy_with_checksum(source, dest)
+        self.assertEqual(source.stat().st_size, dest.stat().st_size)
+        self.assertEqual(source.stat().st_mtime, dest.stat().st_mtime)
+        self.assertEqual(source.stat().st_atime, dest.stat().st_atime)
+        self.assertEqual(source.stat().st_mode, dest.stat().st_mode)
+
+    def test_pathlib_copy_with_checksum_equivalent_to_copy2(self):
+        """Destination from copy-with-hash matches what copy2 would produce (data + metadata)."""
+        source = self.test_data_path / "ref_src.txt"
+        dest_new = self.test_data_path / "dest_new.txt"
+        dest_copy2 = self.test_data_path / "dest_copy2.txt"
+        source.write_bytes(b"reference content for copy2 comparison")
+        source.chmod(0o644)
+        src_hash, dest_hash = utils.pathlib_copy_with_checksum(source, dest_new)
+        shutil.copy2(source, dest_copy2)
+        self.assertEqual(dest_new.stat().st_size, dest_copy2.stat().st_size)
+        self.assertEqual(utils.checksum_xxhash(dest_new), utils.checksum_xxhash(dest_copy2))
+        self.assertEqual(dest_new.stat().st_mtime, dest_copy2.stat().st_mtime)
+        self.assertEqual(dest_new.stat().st_atime, dest_copy2.stat().st_atime)
+        self.assertEqual(dest_new.stat().st_mode, dest_copy2.stat().st_mode)
+        self.assertEqual(src_hash, dest_hash)
+
+    def test_pathlib_copy_with_checksum_preserves_exif(self):
+        """Destination has identical EXIF data after copy (EXIF is stored in file content)."""
+        source = self.test_pic_path
+        dest = self.test_data_path / "copy_pic_exif.jpg"
+        self.assertTrue(source.is_file(), "test_pic.jpg required for EXIF test")
+        src_hash, dest_hash = utils.pathlib_copy_with_checksum(source, dest)
+        self.assertEqual(src_hash, dest_hash)
+        src_exif = utils.exifdata(source)
+        dest_exif = utils.exifdata(dest)
+        self.assertEqual(src_exif, dest_exif, "EXIF data should be identical after copy")
+        if src_exif:
+            self.assertEqual(
+                src_exif.get("Make"), dest_exif.get("Make"), "Make (camera) should match"
+            )
+            self.assertEqual(src_exif.get("Model"), dest_exif.get("Model"), "Model should match")
+
 
 class TestPreset(TestCase):
     def setUp(self) -> None:

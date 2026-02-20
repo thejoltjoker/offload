@@ -252,53 +252,72 @@ class Offloader(QThread):
                     if self._dryrun:
                         logging.info("DRYRUN ENABLED, NOT PERFORMING FILE ACTIONS")
                     else:
-                        # Create destination folder
-                        dest_file.path.parent.mkdir(exist_ok=True, parents=True)
+                        try:
+                            # Create destination folder
+                            dest_file.path.parent.mkdir(exist_ok=True, parents=True)
 
-                        # Send signal to GUI
-                        self._signal["action"] = (
-                            f"Processing file {file_id + 1}/{len(self.source_files.files)} [copying]"
-                        )
-                        self._progress_signal.emit(self._signal)
-
-                        # Copy file
-                        utils.pathlib_copy(source_file.path, dest_file.path)
-
-                        # Send signal to GUI
-                        self._signal["action"] = (
-                            f"Processing file {file_id + 1}/{len(self.source_files.files)} [verifying]"
-                        )
-                        self._progress_signal.emit(self._signal)
-
-                        # Verify file transfer
-                        logging.info("Verifying transferred file")
-
-                        # File transfer successful
-                        if utils.compare_checksums(source_file.checksum, dest_file.checksum):
-                            logging.info("File transferred successfully")
-
-                            # Write to report
-                            self.report.write(source_file, dest_file, "Successful")
-
-                            # Delete source file
-                            if self._mode == "move":
-                                source_file.delete()
-
-                        # File transfer unsuccessful
-                        else:
-                            logging.error(
-                                "File NOT transferred successfully, mismatching checksums"
+                            # Send signal to GUI
+                            self._signal["action"] = (
+                                f"Processing file {file_id + 1}/{len(self.source_files.files)} [copying]"
                             )
+                            self._progress_signal.emit(self._signal)
+
+                            # Copy file (with in-stream hashes; no extra read for verify)
+                            src_hash, dest_hash = utils.pathlib_copy_with_checksum(
+                                source_file.path, dest_file.path
+                            )
+                            source_file.checksum = src_hash
+                            dest_file.checksum = dest_hash
+
+                            # Send signal to GUI
+                            self._signal["action"] = (
+                                f"Processing file {file_id + 1}/{len(self.source_files.files)} [verifying]"
+                            )
+                            self._progress_signal.emit(self._signal)
+
+                            # Verify file transfer (compare returned hashes; no re-read)
+                            logging.info("Verifying transferred file")
+
+                            # File transfer successful
+                            if utils.compare_checksums(src_hash, dest_hash):
+                                logging.info("File transferred successfully")
+
+                                # Write to report
+                                self.report.write(source_file, dest_file, "Successful")
+
+                                # Delete source file
+                                if self._mode == "move":
+                                    source_file.delete()
+
+                                # Count bytes only for successful transfers
+                                self.ol_bytes_transferred += source_file.size
+
+                            # File transfer unsuccessful (checksum mismatch)
+                            else:
+                                logging.error(
+                                    "File NOT transferred successfully, mismatching checksums"
+                                )
+
+                                # Write to report
+                                self.report.write(source_file, dest_file, "Failed")
+
+                                self.errored_files.append(
+                                    {source_file.path: "Mismatching checksum after transfer"}
+                                )
+
+                                # Remove partial/failed destination so we don't leave a bad file
+                                dest_file.path.unlink(missing_ok=True)
+
+                        except OSError as e:
+                            logging.exception("Copy or verify failed: %s", e)
 
                             # Write to report
                             self.report.write(source_file, dest_file, "Failed")
 
-                            self.errored_files.append(
-                                {source_file.path: "Mismatching checksum after transfer"}
-                            )
+                            self.errored_files.append({source_file.path: str(e)})
 
-            # Add file size to total
-            self.ol_bytes_transferred += source_file.size
+                            # Remove partial destination if it exists
+                            dest_file.path.unlink(missing_ok=True)
 
             # Add file to processed files
             self.processed_files.append(source_file.filename)

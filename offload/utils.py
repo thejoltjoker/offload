@@ -206,13 +206,18 @@ class File:
 
     @property
     def checksum(self):
-        """Return the xxhash checksum of the file
+        """Return the xxhash checksum of the file (cached; only computed when empty).
 
         Returns: file checksum
         """
-        if self.is_file:
+        if self.is_file and not self._checksum:
             self._checksum = file_checksum(self.path)
         return self._checksum
+
+    @checksum.setter
+    def checksum(self, value):
+        """Set the checksum (e.g. from copy-with-hash) so it is not re-read."""
+        self._checksum = value or ""
 
     @property
     def size(self) -> int:
@@ -655,7 +660,7 @@ def copy_file(source: Path, destination: Path):
     return True
 
 
-def pathlib_copy(source: Path, destination: Path, chunk_size=262144):
+def pathlib_copy(source: Path, destination: Path, chunk_size=8 * 1024 * 1024):
     """Use pathlib to copy a file"""
     if source.stat().st_size >= (1024**2 * 64):
         with source.open("rb") as src, destination.open("wb") as dest:
@@ -663,6 +668,24 @@ def pathlib_copy(source: Path, destination: Path, chunk_size=262144):
                 dest.write(chunk)
     else:
         destination.write_bytes(source.read_bytes())
+
+
+def pathlib_copy_with_checksum(source: Path, destination: Path, chunk_size=8 * 1024 * 1024):
+    """Copy a file while computing xxhash of source and destination (same bytes).
+    Preserves metadata (mtime, atime, mode) via shutil.copystat.
+    Returns (source_hexdigest, dest_hexdigest) for verification without re-reading.
+    """
+    if xxhash is None:
+        raise Exception("xxhash not available on this platform.  Try 'pip install xxhash'")
+    h_source = xxhash.xxh3_64()
+    h_dest = xxhash.xxh3_64()
+    with source.open("rb") as src, destination.open("wb") as dest:
+        for chunk in iter(lambda: src.read(chunk_size), b""):
+            h_source.update(chunk)
+            h_dest.update(chunk)
+            dest.write(chunk)
+    shutil.copystat(source, destination)
+    return (h_source.hexdigest(), h_dest.hexdigest())
 
 
 def file_mod_date(file_path):
@@ -698,7 +721,7 @@ def compare_checksums(a, b):
     if a == b:
         logging.info(f"Checksums match: {a} (source) | {b} (destination)")
         return True
-    logging.info(f"Checksums mismatch: {a} (source)| {b} (destination)")
+    logging.info(f"Checksums mismatch: {a} (source) | {b} (destination)")
     return False
 
 

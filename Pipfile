@@ -17,6 +17,7 @@ pyqt5 = ">=5.15"
 psutil = ">=5.9"
 pillow = ">=10.0"
 setuptools = "*"
+pytest-benchmark = "*"
 
 [requires]
 python_version = "3.12"
