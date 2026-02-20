@@ -30,12 +30,43 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
-from offload import VERSION, utils
+from offload import APP_DATA_PATH, VERSION, utils
 from offload.app import Offloader
 from offload.styles import COLORS, STYLES
 from offload.utils import File, Settings, disk_usage, setup_logger
 
 setup_logger("debug")
+
+# Resolve fonts dir: py2app uses package/data, dev uses repo data/ or APP_DATA_PATH/data
+def _fonts_dir():
+    candidates = [
+        Path(__file__).parent / "data" / "fonts",
+        APP_DATA_PATH / "data" / "fonts",
+        Path.cwd() / "data" / "fonts",
+    ]
+    for d in candidates:
+        if d.is_dir() and (d / "SourceSans3-Regular.otf").exists():
+            return d
+    return None
+
+
+def _apply_font(widget):
+    """Load Source Sans 3 if available and set on widget; otherwise use system fallback."""
+    font_dir = _fonts_dir()
+    fontDB = QFontDatabase()
+    if font_dir:
+        for name in ("SourceSans3-Regular.otf", "SourceSans3-Bold.otf", "SourceSans3-Light.otf"):
+            path = font_dir / name
+            if path.exists():
+                fontDB.addApplicationFont(str(path))
+    families = QFontDatabase().families()
+    if "Source Sans 3" in families:
+        font = QFont("Source Sans 3")
+    else:
+        font = QFont("Helvetica Neue")  # macOS fallback
+        logging.debug("Source Sans 3 not found (add data/fonts/ with .otf files), using Helvetica Neue")
+    font.setStyleStrategy(QFont.PreferAntialias)
+    widget.setFont(font)
 
 
 # QStyle.SP_DriveHDIcon
@@ -81,19 +112,7 @@ class SettingsDialog(QDialog):
 
     def initUI(self):
         self.resize(640, 260)
-        fontDB = QFontDatabase()
-        fontDB.addApplicationFont(
-            str(Path(__file__).parent / "data" / "fonts" / "SourceSans3-Regular.otf")
-        )
-        fontDB.addApplicationFont(
-            str(Path(__file__).parent / "data" / "fonts" / "SourceSans3-Bold.otf")
-        )
-        fontDB.addApplicationFont(
-            str(Path(__file__).parent / "data" / "fonts" / "SourceSans3-Light.otf")
-        )
-        font = QFont("Source Sans 3")
-        font.setStyleStrategy(QFont.PreferAntialias)
-        self.setFont(font)
+        _apply_font(self)
 
         # mainLayout = QVBoxLayout()
         mainLayout = QGridLayout()
@@ -173,20 +192,7 @@ class SettingsDialog(QDialog):
         self.closeButton.clicked.connect(self.close)
         mainLayout.addWidget(self.closeButton, 6, 0, 1, 3)
 
-        # Font
-        fontDB = QFontDatabase()
-        fontDB.addApplicationFont(
-            str(Path(__file__).parent / "data" / "fonts" / "SourceSans3-Regular.otf")
-        )
-        fontDB.addApplicationFont(
-            str(Path(__file__).parent / "data" / "fonts" / "SourceSans3-Bold.otf")
-        )
-        fontDB.addApplicationFont(
-            str(Path(__file__).parent / "data" / "fonts" / "SourceSans3-Light.otf")
-        )
-        font = QFont("Source Sans 3")
-        font.setStyleStrategy(QFont.PreferAntialias)
-        self.setFont(font)
+        _apply_font(self)
 
         # Styling
         self.colors = COLORS
@@ -267,20 +273,7 @@ class MainWindow(QMainWindow):
             if vols[smallest_vol] / 1024**3 < 129:
                 self.sourcePath = Path(smallest_vol)
 
-        # Setup custom font
-        fontDB = QFontDatabase()
-        fontDB.addApplicationFont(
-            str(Path(__file__).parent / "data" / "fonts" / "SourceSans3-Regular.otf")
-        )
-        fontDB.addApplicationFont(
-            str(Path(__file__).parent / "data" / "fonts" / "SourceSans3-Bold.otf")
-        )
-        fontDB.addApplicationFont(
-            str(Path(__file__).parent / "data" / "fonts" / "SourceSans3-Light.otf")
-        )
-        font = QFont("Source Sans 3")
-        font.setStyleStrategy(QFont.PreferAntialias)
-        self.setFont(font)
+        _apply_font(self)
 
         self.sourceSize = 0
         self.destPath = self.settings.destination()
