@@ -42,7 +42,8 @@ The project supports **macOS on Apple Silicon (M1)** and Intel. Python 3.12+ is 
   or `pipenv run python offload/gui.py`
 - **Build the .app bundle** (macOS): Uses py2app; produces a native arm64 app on Apple Silicon:
   ```bash
-  ./compile.sh
+  make zip      # build .app and create dist/Offload.zip
+  make all      # build, zip, copy to website assets and /Applications
   ```
   Or manually: `pipenv run python setup.py py2app`. The built app is in `dist/Offload.app`.
 

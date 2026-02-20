@@ -1,0 +1,40 @@
+name: Build and attach release asset
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install pipenv and py2app
+        run: pip install pipenv py2app
+
+      - name: Install dependencies
+        run: pipenv install
+        env:
+          PIPENV_VENV_IN_PROJECT: 1
+
+      - name: Build and zip app
+        run: pipenv run make zip
+
+      - name: Upload zip to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.release.tag_name }}
+          files: dist/Offload.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
