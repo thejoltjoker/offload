@@ -1,35 +1,39 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
 """
 Camera Offload
 ---
 This script is used for transferring files and verifying them using a checksum.
 """
 
-import os
-import logging
 import argparse
-import time
 import csv
+import logging
+import os
+import time
 from datetime import datetime
 from pathlib import Path
+
 from PyQt5.QtCore import QThread, pyqtSignal
 
-from offload import APP_DATA_PATH, REPORTS_PATH, EXCLUDE_FILES, utils
-from offload.utils import FileList, File, Settings
+from offload import APP_DATA_PATH, EXCLUDE_FILES, REPORTS_PATH, utils
+from offload.utils import File, FileList, Settings
 
 
 class Offloader(QThread):
     _progress_signal = pyqtSignal(dict)
 
-    def __init__(self, source, dest,
-                 mode='copy',
-                 structure=None,
-                 filename=None,
-                 prefix=None,
-                 dryrun=False,
-                 log_level='info'):
-        super(Offloader, self).__init__()
+    def __init__(
+        self,
+        source,
+        dest,
+        mode="copy",
+        structure=None,
+        filename=None,
+        prefix=None,
+        dryrun=False,
+        log_level="info",
+    ):
+        super().__init__()
         self.settings = Settings()
         self._logger = utils.setup_logger(log_level)
         self._today = datetime.now()
@@ -54,7 +58,7 @@ class Offloader(QThread):
         self._mode = mode
         self._dryrun = dryrun
         self._exclude = EXCLUDE_FILES
-        self._signal = {'percentage': 0, 'action': '', 'time': '', 'is_finished': False}
+        self._signal = {"percentage": 0, "action": "", "time": "", "is_finished": False}
         self._running = True
 
         # Properties
@@ -78,13 +82,13 @@ class Offloader(QThread):
     def update_from_settings(self):
         """Update structure, filename and prefix from settings"""
         self._structure = self.settings.structure
-        logging.debug(f'Folder structure preset is {self._structure}')
+        logging.debug(f"Folder structure preset is {self._structure}")
 
         self._filename = self.settings.filename
-        logging.debug(f'Filename preset is {self._filename}')
+        logging.debug(f"Filename preset is {self._filename}")
 
         self._prefix = self.settings.prefix
-        logging.debug(f'Filename prefix preset is {self._prefix}')
+        logging.debug(f"Filename prefix preset is {self._prefix}")
 
     @property
     def source(self):
@@ -98,7 +102,7 @@ class Offloader(QThread):
             self._source = Path(path)
             self.source_files = FileList(self._source, exclude=self._exclude)
         else:
-            logging.error(f'{path} is not a valid directory')
+            logging.error(f"{path} is not a valid directory")
 
     @property
     def destination(self):
@@ -155,23 +159,29 @@ class Offloader(QThread):
             skip = False
 
             # Display how far along the transfer we are
-            logging.info(f"Processing file {file_id + 1}/{len(self.source_files.files)} "
-                         f"(~{self.ol_percentage}%) | {source_file.filename}")
+            logging.info(
+                f"Processing file {file_id + 1}/{len(self.source_files.files)} "
+                f"(~{self.ol_percentage}%) | {source_file.filename}"
+            )
 
             # Send signal to GUI
-            self._signal['percentage'] = int(self.ol_percentage)
-            self._signal['action'] = f'Processing file {file_id + 1}/{len(self.source_files.files)}'
-            self._signal['time'] = self.ol_time_remaining
+            self._signal["percentage"] = int(self.ol_percentage)
+            self._signal["action"] = f"Processing file {file_id + 1}/{len(self.source_files.files)}"
+            self._signal["time"] = self.ol_time_remaining
             self._progress_signal.emit(self._signal)
 
             # Create File object for destination file
-            dest_folder = self._destination / utils.destination_folder(source_file.mdate, preset=self._structure)
+            dest_folder = self._destination / utils.destination_folder(
+                source_file.mdate, preset=self._structure
+            )
             dest_file = File(dest_folder / source_file.filename, prefix=self._prefix)
 
             # Change filename
             if self._filename:
-                logging.debug(f'New user given filename is {self._filename}')
-                new_name = source_file.exifdata.get(utils.Preset.filename(self._filename), "unknown").lower()
+                logging.debug(f"New user given filename is {self._filename}")
+                new_name = source_file.exifdata.get(
+                    utils.Preset.filename(self._filename), "unknown"
+                ).lower()
                 logging.debug(new_name)
                 dest_file.name = new_name
 
@@ -184,7 +194,7 @@ class Offloader(QThread):
 
             # Write to report
             if not self._running:
-                self.report.write(source_file, dest_file, 'Not started', checksum=False)
+                self.report.write(source_file, dest_file, "Not started", checksum=False)
                 continue
 
             # Print meta
@@ -197,23 +207,29 @@ class Offloader(QThread):
                 # Check if destination file exists
                 if dest_file.is_file:
                     # Send signal to GUI
-                    self._signal['action'] = f'Processing file {file_id + 1}/{len(self.source_files.files)} [verifying]'
+                    self._signal["action"] = (
+                        f"Processing file {file_id + 1}/{len(self.source_files.files)} [verifying]"
+                    )
                     self._progress_signal.emit(self._signal)
 
                     # Add increment
                     if dest_file.inc < 1:
-                        logging.info("File with the same name exists in destination, comparing attributes")
+                        logging.info(
+                            "File with the same name exists in destination, comparing attributes"
+                        )
                     else:
                         logging.debug(
-                            f"File with incremented name {dest_file.filename} exists, comparing checksums")
+                            f"File with incremented name {dest_file.filename} exists, comparing checksums"
+                        )
 
                     # If checksums are matching
                     # if utils.compare_checksums(source_file.checksum, dest_file.checksum):
                     if utils.compare_files(source_file, dest_file):
-                        logging.warning(f"File ({dest_file.filename}) "
-                                        f"already exists in destination, skipping")
+                        logging.warning(
+                            f"File ({dest_file.filename}) already exists in destination, skipping"
+                        )
                         # Write to report
-                        self.report.write(source_file, dest_file, 'Skipped')
+                        self.report.write(source_file, dest_file, "Skipped")
 
                         self.skipped_files.append(source_file.path)
 
@@ -222,9 +238,10 @@ class Offloader(QThread):
                     else:
                         logging.warning(
                             f"File ({dest_file.filename}) with the same name already exists in destination,"
-                            f" adding incremental")
+                            f" adding incremental"
+                        )
                         dest_file.increment_filename()
-                        logging.debug(f'Incremented filename is {dest_file.filename}')
+                        logging.debug(f"Incremented filename is {dest_file.filename}")
                         continue
                 else:
                     break
@@ -239,16 +256,18 @@ class Offloader(QThread):
                         dest_file.path.parent.mkdir(exist_ok=True, parents=True)
 
                         # Send signal to GUI
-                        self._signal[
-                            'action'] = f'Processing file {file_id + 1}/{len(self.source_files.files)} [copying]'
+                        self._signal["action"] = (
+                            f"Processing file {file_id + 1}/{len(self.source_files.files)} [copying]"
+                        )
                         self._progress_signal.emit(self._signal)
 
                         # Copy file
                         utils.pathlib_copy(source_file.path, dest_file.path)
 
                         # Send signal to GUI
-                        self._signal[
-                            'action'] = f'Processing file {file_id + 1}/{len(self.source_files.files)} [verifying]'
+                        self._signal["action"] = (
+                            f"Processing file {file_id + 1}/{len(self.source_files.files)} [verifying]"
+                        )
                         self._progress_signal.emit(self._signal)
 
                         # Verify file transfer
@@ -259,7 +278,7 @@ class Offloader(QThread):
                             logging.info("File transferred successfully")
 
                             # Write to report
-                            self.report.write(source_file, dest_file, 'Successful')
+                            self.report.write(source_file, dest_file, "Successful")
 
                             # Delete source file
                             if self._mode == "move":
@@ -267,12 +286,16 @@ class Offloader(QThread):
 
                         # File transfer unsuccessful
                         else:
-                            logging.error("File NOT transferred successfully, mismatching checksums")
+                            logging.error(
+                                "File NOT transferred successfully, mismatching checksums"
+                            )
 
                             # Write to report
-                            self.report.write(source_file, dest_file, 'Failed')
+                            self.report.write(source_file, dest_file, "Failed")
 
-                            self.errored_files.append({source_file.path: "Mismatching checksum after transfer"})
+                            self.errored_files.append(
+                                {source_file.path: "Mismatching checksum after transfer"}
+                            )
 
             # Add file size to total
             self.ol_bytes_transferred += source_file.size
@@ -295,7 +318,9 @@ class Offloader(QThread):
             # Sort folder for better output
             self.destination_folders.sort()
 
-            logging.info(f"Created the following folders {', '.join([str(x.name) for x in self.destination_folders])}")
+            logging.info(
+                f"Created the following folders {', '.join([str(x.name) for x in self.destination_folders])}"
+            )
             logging.debug([str(x.resolve()) for x in self.destination_folders])
 
         logging.info(f"{len(self.processed_files)} files processed")
@@ -311,32 +336,41 @@ class Offloader(QThread):
         print(self._running)
         self.report.save()
         self.report.write_html()
-        self._signal['time'] = 0
-        self._signal['is_finished'] = True
+        self._signal["time"] = 0
+        self._signal["is_finished"] = True
         self._progress_signal.emit(self._signal)
         return True
 
     def run(self):
-        logging.info('Hello')
+        logging.info("Hello")
         self.offload()
 
 
 class Report:
-    def __init__(self, report_format='csv'):
+    def __init__(self, report_format="csv"):
         self._date = datetime.now()
         self.format = report_format
         self.path = REPORTS_PATH / f"{self._date.strftime('%y%m%d%H%M')}_report.csv"
-        self.html_path = self.path.parent / f'{self.path.stem}.html'
-        self.html_template_path = APP_DATA_PATH / 'data' / 'report_template.html'
+        self.html_path = self.path.parent / f"{self.path.stem}.html"
+        self.html_template_path = APP_DATA_PATH / "data" / "report_template.html"
 
         if not self.path.parent.is_dir():
             self.path.parent.mkdir(exist_ok=True, parents=True)
-        columns = ['Source Filename', 'Destination Filename', 'Status', 'Source Checksum', 'Destination Checksum',
-                   'Source Path', 'Destination Path', 'Size', 'Modification Date']
+        columns = [
+            "Source Filename",
+            "Destination Filename",
+            "Status",
+            "Source Checksum",
+            "Destination Checksum",
+            "Source Path",
+            "Destination Path",
+            "Size",
+            "Modification Date",
+        ]
 
         if not self.path.is_file():
-            with self.path.open('w') as report:
-                writer = csv.writer(report, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
+            with self.path.open("w") as report:
+                writer = csv.writer(report, delimiter=",", quotechar='"', quoting=csv.QUOTE_MINIMAL)
                 writer.writerow(columns)
 
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -344,105 +378,124 @@ class Report:
 
     def write_html(self):
         """Create html file from csv"""
-        with self.path.open('r') as report:
-            csv_reader = csv.reader(report, delimiter=',')
+        with self.path.open("r") as report:
+            csv_reader = csv.reader(report, delimiter=",")
             line_count = 0
-            table_columns = ''
+            table_columns = ""
             table_rows = []
             for row in csv_reader:
                 if line_count == 0:
-                    table_columns = '\n'.join([f'<th scope="col">{x}</th>' for x in row])
+                    table_columns = "\n".join([f'<th scope="col">{x}</th>' for x in row])
                     line_count += 1
                 else:
                     cols = []
                     for col in row:
-                        if col == 'Successful':
+                        if col == "Successful":
                             cols.append(f'\t<td><span class="text-success">{col}</span></td>')
-                        elif col == 'Skipped':
+                        elif col == "Skipped":
                             cols.append(f'\t<td><span class="text-info">{col}</span></td>')
-                        elif col == 'Failed':
+                        elif col == "Failed":
                             cols.append(f'\t<td><span class="text-failed">{col}</span></td>')
                         else:
-                            cols.append(f'\t<td>{col}</td>')
-                    td = '\n'.join(cols)
+                            cols.append(f"\t<td>{col}</td>")
+                    td = "\n".join(cols)
                     table_rows.append(td)
                     line_count += 1
-            table_rows = '\n'.join([f'<tr>\n{x}\n</tr>' for x in table_rows])
+            table_rows = "\n".join([f"<tr>\n{x}\n</tr>" for x in table_rows])
 
         html_report = self.html_template_path.read_text()
-        html_report = html_report.format(date=self._date.strftime('%Y-%m-%d %H:%M'),
-                                         table_columns=table_columns,
-                                         table_rows=table_rows)
+        html_report = html_report.format(
+            date=self._date.strftime("%Y-%m-%d %H:%M"),
+            table_columns=table_columns,
+            table_rows=table_rows,
+        )
         self.html_path.write_text(html_report)
         return self.html_path
 
     def write(self, source: File, destination: File, status, checksum=True):
-        with self.path.open('a') as report:
-            writer = csv.writer(report, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
+        with self.path.open("a") as report:
+            writer = csv.writer(report, delimiter=",", quotechar='"', quoting=csv.QUOTE_MINIMAL)
             if checksum:
-                columns = [source.filename, destination.filename, status,
-                           source.checksum, destination.checksum,
-                           source.path, destination.path, utils.convert_size(source.size), source.mdate]
+                columns = [
+                    source.filename,
+                    destination.filename,
+                    status,
+                    source.checksum,
+                    destination.checksum,
+                    source.path,
+                    destination.path,
+                    utils.convert_size(source.size),
+                    source.mdate,
+                ]
             else:
-                columns = [source.filename, destination.filename, status,
-                           None, None,
-                           source.path, destination.path, utils.convert_size(source.size), source.mdate]
+                columns = [
+                    source.filename,
+                    destination.filename,
+                    status,
+                    None,
+                    None,
+                    source.path,
+                    destination.path,
+                    utils.convert_size(source.size),
+                    source.mdate,
+                ]
             writer.writerow(columns)
 
     def save(self, path=None):
         if path is None:
-            path = Path().home() / 'Desktop' / f"Offload_Report_{self._date.strftime('%Y-%m-%d_%H%M')}.csv"
+            path = (
+                Path().home()
+                / "Desktop"
+                / f"Offload_Report_{self._date.strftime('%Y-%m-%d_%H%M')}.csv"
+            )
         utils.pathlib_copy(self.path, path)
 
 
 def cli():
     """Command line interface"""
     # Create the parser
-    parser = argparse.ArgumentParser(
-        description="Offload files with checksum verification")
+    parser = argparse.ArgumentParser(description="Offload files with checksum verification")
 
     # Add the arguments
-    parser.add_argument("-s", "--source",
-                        type=str,
-                        help="The source folder",
-                        action="store")
+    parser.add_argument("-s", "--source", type=str, help="The source folder", action="store")
 
-    parser.add_argument("-d", "--destination",
-                        type=str,
-                        help="The destination folder",
-                        action="store")
+    parser.add_argument(
+        "-d", "--destination", type=str, help="The destination folder", action="store"
+    )
 
-    parser.add_argument("-f", "--folder-structure",
-                        choices=["original", "taken_date",
-                                 "offload_date", "year", "year_month", "flat"],
-                        dest="structure",
-                        default="taken_date",
-                        help="Set the folder structure.\nDefault: taken_date",
-                        action="store")
+    parser.add_argument(
+        "-f",
+        "--folder-structure",
+        choices=["original", "taken_date", "offload_date", "year", "year_month", "flat"],
+        dest="structure",
+        default="taken_date",
+        help="Set the folder structure.\nDefault: taken_date",
+        action="store",
+    )
 
-    parser.add_argument("-n", "--name",
-                        type=str,
-                        help="Set a new filename",
-                        action="store")
+    parser.add_argument("-n", "--name", type=str, help="Set a new filename", action="store")
 
-    parser.add_argument("-p", "--prefix",
-                        help="Set the filename prefix. Enter a custom prefix, \"taken_date\", \"taken_date_time\" or "
-                             "\"offload_date\" for templates. \"none\" for no prefix.\nDefault: taken_date",
-                        default="taken_date",
-                        action="store")
+    parser.add_argument(
+        "-p",
+        "--prefix",
+        help='Set the filename prefix. Enter a custom prefix, "taken_date", "taken_date_time" or '
+        '"offload_date" for templates. "none" for no prefix.\nDefault: taken_date',
+        default="taken_date",
+        action="store",
+    )
 
-    parser.add_argument("-m", "--move",
-                        help="Move files instead of copy",
-                        action="store_true")
+    parser.add_argument("-m", "--move", help="Move files instead of copy", action="store_true")
 
-    parser.add_argument("--dryrun",
-                        help="Run the script without actually changing any files",
-                        action="store_true")
+    parser.add_argument(
+        "--dryrun", help="Run the script without actually changing any files", action="store_true"
+    )
 
-    parser.add_argument("--debug-log",
-                        dest="log_level",
-                        help="Show the log with debugging messages",
-                        action="store_true")
+    parser.add_argument(
+        "--debug-log",
+        dest="log_level",
+        help="Show the log with debugging messages",
+        action="store_true",
+    )
 
     # Execute the parse_args() method
     args = parser.parse_args()
@@ -459,9 +512,8 @@ def cli():
         confirmation = True
         volumes = {}
         if os.name == "posix":
-            volumes = {n: str(v) for (n, v) in enumerate(
-                Path("/Volumes").iterdir(), 1)}
-        print(f"Choose a volume to offload from, or enter a custom path:")
+            volumes = {n: str(v) for (n, v) in enumerate(Path("/Volumes").iterdir(), 1)}
+        print("Choose a volume to offload from, or enter a custom path:")
         for n, vol in volumes.items():
             print(f"{n}: {vol}")
 
@@ -477,7 +529,7 @@ def cli():
                 else:
                     print("Invalid choice. Try again.")
 
-            except Exception as e:
+            except Exception:
                 print("Invalid selection")
 
                 exit(1)
@@ -488,15 +540,13 @@ def cli():
 
     if args.destination is None:
         confirmation = True
-        recent_paths = {n: str(v) for (n, v) in enumerate(
-            utils.get_recent_paths(), 1)}
+        recent_paths = {n: str(v) for (n, v) in enumerate(utils.get_recent_paths(), 1)}
         if recent_paths:
-            print(
-                f"Enter the path to your destination folder or use one of these recent paths:")
+            print("Enter the path to your destination folder or use one of these recent paths:")
             for n, path in recent_paths.items():
                 print(f"{n}: {path}")
         else:
-            print(f"Enter the path to your destination folder:")
+            print("Enter the path to your destination folder:")
 
         while True:
             try:
@@ -512,7 +562,7 @@ def cli():
                     else:
                         print("Path does not exist. Try again.")
 
-            except Exception as e:
+            except Exception:
                 print("Invalid input")
                 exit(1)
 
@@ -561,15 +611,16 @@ def cli():
         print("")
 
     # Run offload
-    ol = Offloader(source=source,
-                   dest=destination,
-                   structure=folder_structure,
-                   filename=args.name,
-                   prefix=args.prefix,
-                   mode=mode,
-                   dryrun=args.dryrun,
-                   log_level=log_level
-                   )
+    ol = Offloader(
+        source=source,
+        dest=destination,
+        structure=folder_structure,
+        filename=args.name,
+        prefix=args.prefix,
+        mode=mode,
+        dryrun=args.dryrun,
+        log_level=log_level,
+    )
     ol.offload()
 
 

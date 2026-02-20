@@ -1,57 +1,63 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
 """
 script_name.py
 Description of script_name.py.
 """
+
+import argparse
+import os
+from pathlib import Path
+
+from offload import utils
+from offload.app import Offloader
+from offload.utils import Settings
+
+
 def cli():
     """Command line interface"""
     # Create the parser
-    parser = argparse.ArgumentParser(
-        description="Offload files with checksum verification")
+    parser = argparse.ArgumentParser(description="Offload files with checksum verification")
 
     # Add the arguments
-    parser.add_argument("-s", "--source",
-                        type=str,
-                        help="The source folder",
-                        action="store")
+    parser.add_argument("-s", "--source", type=str, help="The source folder", action="store")
 
-    parser.add_argument("-d", "--destination",
-                        type=str,
-                        help="The destination folder",
-                        action="store")
+    parser.add_argument(
+        "-d", "--destination", type=str, help="The destination folder", action="store"
+    )
 
-    parser.add_argument("-f", "--folder-structure",
-                        choices=["original", "taken_date",
-                                 "offload_date", "year", "year_month", "flat"],
-                        dest="structure",
-                        default="taken_date",
-                        help="Set the folder structure.\nDefault: taken_date",
-                        action="store")
+    parser.add_argument(
+        "-f",
+        "--folder-structure",
+        choices=["original", "taken_date", "offload_date", "year", "year_month", "flat"],
+        dest="structure",
+        default="taken_date",
+        help="Set the folder structure.\nDefault: taken_date",
+        action="store",
+    )
 
-    parser.add_argument("-n", "--name",
-                        type=str,
-                        help="Set a new filename",
-                        action="store")
+    parser.add_argument("-n", "--name", type=str, help="Set a new filename", action="store")
 
-    parser.add_argument("-p", "--prefix",
-                        help="Set the filename prefix. Enter a custom prefix, \"taken_date\", \"taken_date_time\" or "
-                             "\"offload_date\" for templates. \"none\" for no prefix.\nDefault: taken_date",
-                        default="taken_date",
-                        action="store")
+    parser.add_argument(
+        "-p",
+        "--prefix",
+        help='Set the filename prefix. Enter a custom prefix, "taken_date", "taken_date_time" or '
+        '"offload_date" for templates. "none" for no prefix.\nDefault: taken_date',
+        default="taken_date",
+        action="store",
+    )
 
-    parser.add_argument("-m", "--move",
-                        help="Move files instead of copy",
-                        action="store_true")
+    parser.add_argument("-m", "--move", help="Move files instead of copy", action="store_true")
 
-    parser.add_argument("--dryrun",
-                        help="Run the script without actually changing any files",
-                        action="store_true")
+    parser.add_argument(
+        "--dryrun", help="Run the script without actually changing any files", action="store_true"
+    )
 
-    parser.add_argument("--debug-log",
-                        dest="log_level",
-                        help="Show the log with debugging messages",
-                        action="store_true")
+    parser.add_argument(
+        "--debug-log",
+        dest="log_level",
+        help="Show the log with debugging messages",
+        action="store_true",
+    )
 
     # Execute the parse_args() method
     args = parser.parse_args()
@@ -68,9 +74,8 @@ def cli():
         confirmation = True
         volumes = {}
         if os.name == "posix":
-            volumes = {n: str(v) for (n, v) in enumerate(
-                Path("/Volumes").iterdir(), 1)}
-        print(f"Choose a volume to offload from, or enter a custom path:")
+            volumes = {n: str(v) for (n, v) in enumerate(Path("/Volumes").iterdir(), 1)}
+        print("Choose a volume to offload from, or enter a custom path:")
         for n, vol in volumes.items():
             print(f"{n}: {vol}")
 
@@ -86,7 +91,7 @@ def cli():
                 else:
                     print("Invalid choice. Try again.")
 
-            except Exception as e:
+            except Exception:
                 print("Invalid selection")
 
                 exit(1)
@@ -97,15 +102,13 @@ def cli():
 
     if args.destination is None:
         confirmation = True
-        recent_paths = {n: str(v) for (n, v) in enumerate(
-            utils.get_recent_paths(), 1)}
+        recent_paths = {n: str(v) for (n, v) in enumerate(utils.get_recent_paths(), 1)}
         if recent_paths:
-            print(
-                f"Enter the path to your destination folder or use one of these recent paths:")
+            print("Enter the path to your destination folder or use one of these recent paths:")
             for n, path in recent_paths.items():
                 print(f"{n}: {path}")
         else:
-            print(f"Enter the path to your destination folder:")
+            print("Enter the path to your destination folder:")
 
         while True:
             try:
@@ -121,7 +124,7 @@ def cli():
                     else:
                         print("Path does not exist. Try again.")
 
-            except Exception as e:
+            except Exception:
                 print("Invalid input")
                 exit(1)
 
@@ -170,15 +173,16 @@ def cli():
         print("")
 
     # Run offload
-    ol = Offloader(source=source,
-                   dest=destination,
-                   structure=folder_structure,
-                   filename=args.name,
-                   prefix=args.prefix,
-                   mode=mode,
-                   dryrun=args.dryrun,
-                   log_level=log_level
-                   )
+    ol = Offloader(
+        source=source,
+        dest=destination,
+        structure=folder_structure,
+        filename=args.name,
+        prefix=args.prefix,
+        mode=mode,
+        dryrun=args.dryrun,
+        log_level=log_level,
+    )
     ol.offload()
 
 
@@ -187,5 +191,5 @@ def main():
     pass
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

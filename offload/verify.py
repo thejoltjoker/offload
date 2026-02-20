@@ -1,11 +1,8 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
 """
 verify.py
 Description of verify.py.
 """
-from pathlib import Path
-from offload.utils import FileList, File
 
 
 class Verifier:
@@ -23,5 +20,5 @@ def main():
     pass
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

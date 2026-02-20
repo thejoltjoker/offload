@@ -111,3 +111,6 @@ venv.bak/
 offload/recent_paths.json
 /tests/ol_test_file_a.txt
 /tests/ol_test_file_b.txt
+/ol_test_file_a.txt
+/ol_test_file_b.txt
+/_ol_test_settings.json
