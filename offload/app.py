@@ -144,6 +144,19 @@ class Offloader(QThread):
     def ol_speed(self):
         return self.ol_bytes_transferred / self.ol_time_elapsed
 
+    def _display_time_remaining(self, file_id: int, total_files: int) -> float:
+        """Time remaining for GUI: use bytes-based estimate when we have speed, else file-based."""
+        if self.ol_speed > 0:
+            return self.ol_time_remaining
+        if total_files <= 0 or file_id + 1 <= 0:
+            return 0
+        files_done = file_id + 1
+        files_left = total_files - files_done
+        if files_left <= 0:
+            return 0
+        time_per_file = self.ol_time_elapsed / files_done
+        return files_left * time_per_file
+
     def offload(self):
         """Offload files"""
         # Offload start time
@@ -155,19 +168,24 @@ class Offloader(QThread):
         logging.info("---\n")
 
         # Iterate over all the files
+        total_files = len(self.source_files.files)
         for file_id, source_file in enumerate(self.source_files.files):
             skip = False
 
+            # Display percentage: use max(bytes-based, file-based) so bar moves when verifying/skipping
+            files_pct = (file_id + 1) / total_files * 100 if total_files else 0
+            display_pct = max(self.ol_percentage, files_pct)
+
             # Display how far along the transfer we are
             logging.info(
-                f"Processing file {file_id + 1}/{len(self.source_files.files)} "
+                f"Processing file {file_id + 1}/{total_files} "
                 f"(~{self.ol_percentage}%) | {source_file.filename}"
             )
 
             # Send signal to GUI
-            self._signal["percentage"] = int(self.ol_percentage)
-            self._signal["action"] = f"Processing file {file_id + 1}/{len(self.source_files.files)}"
-            self._signal["time"] = self.ol_time_remaining
+            self._signal["percentage"] = int(display_pct)
+            self._signal["action"] = f"Processing file {file_id + 1}/{total_files}"
+            self._signal["time"] = self._display_time_remaining(file_id, total_files)
             self._progress_signal.emit(self._signal)
 
             # Create File object for destination file
@@ -206,9 +224,12 @@ class Offloader(QThread):
             while True:
                 # Check if destination file exists
                 if dest_file.is_file:
-                    # Send signal to GUI
+                    # Update progress so bar reflects current state when verifying (use file-based % when no bytes transferred yet)
+                    files_pct = (file_id + 1) / total_files * 100 if total_files else 0
+                    self._signal["percentage"] = int(max(self.ol_percentage, files_pct))
+                    self._signal["time"] = self._display_time_remaining(file_id, total_files)
                     self._signal["action"] = (
-                        f"Processing file {file_id + 1}/{len(self.source_files.files)} [verifying]"
+                        f"Processing file {file_id + 1}/{total_files} [verifying]"
                     )
                     self._progress_signal.emit(self._signal)
 
@@ -222,17 +243,76 @@ class Offloader(QThread):
                             f"File with incremented name {dest_file.filename} exists, comparing checksums"
                         )
 
-                    # If checksums are matching
-                    # if utils.compare_checksums(source_file.checksum, dest_file.checksum):
-                    if utils.compare_files(source_file, dest_file):
+                    # Fast path: size and mtime match -> skip without hashing
+                    if source_file.size == dest_file.size and source_file.mtime == dest_file.mtime:
+                        logging.info(
+                            f"Sizes match: {source_file.size} (source) | {dest_file.size} (destination)"
+                        )
+                        logging.info(
+                            f"Modification times match: {source_file.mtime} (source) | {dest_file.mtime} (destination)"
+                        )
                         logging.warning(
                             f"File ({dest_file.filename}) already exists in destination, skipping"
                         )
-                        # Write to report
                         self.report.write(source_file, dest_file, "Skipped")
-
                         self.skipped_files.append(source_file.path)
+                        skip = True
+                        break
 
+                    # Need full hash comparison; hash with progress so UI updates
+                    verifying_src = f"Processing file {file_id + 1}/{total_files} [verifying source]"
+                    verifying_dest = f"Processing file {file_id + 1}/{total_files} [verifying destination]"
+                    last_verify_emit = [None, None]  # [pct, time]
+                    verify_files_pct = (file_id + 1) / total_files * 100 if total_files else 0
+
+                    def make_verify_callback(action_label):
+                        def cb(bytes_read: int, total: int) -> None:
+                            if total <= 0:
+                                return
+                            pct = (bytes_read / total) * 100
+                            now = time.perf_counter()
+                            should_emit = (
+                                last_verify_emit[0] is None
+                                or (pct - last_verify_emit[0]) >= 5.0
+                                or (now - last_verify_emit[1]) >= 0.1
+                                or bytes_read >= total
+                            )
+                            if should_emit:
+                                last_verify_emit[0] = pct
+                                last_verify_emit[1] = now
+                                self._signal["percentage"] = int(
+                                    max(self.ol_percentage, verify_files_pct)
+                                )
+                                self._signal["action"] = f"{action_label} ({int(pct)}%)"
+                                self._signal["time"] = self._display_time_remaining(
+                                    file_id, total_files
+                                )
+                                self._progress_signal.emit(self._signal)
+
+                        return cb
+
+                    self._signal["action"] = verifying_src
+                    self._progress_signal.emit(self._signal)
+                    src_hash = utils.checksum_xxhash(
+                        source_file.path, progress_callback=make_verify_callback(verifying_src)
+                    )
+                    source_file.checksum = src_hash
+
+                    self._signal["action"] = verifying_dest
+                    self._progress_signal.emit(self._signal)
+                    last_verify_emit[0] = None
+                    last_verify_emit[1] = None
+                    dest_hash = utils.checksum_xxhash(
+                        dest_file.path, progress_callback=make_verify_callback(verifying_dest)
+                    )
+                    dest_file.checksum = dest_hash
+
+                    if utils.compare_checksums(src_hash, dest_hash):
+                        logging.warning(
+                            f"File ({dest_file.filename}) already exists in destination, skipping"
+                        )
+                        self.report.write(source_file, dest_file, "Skipped")
+                        self.skipped_files.append(source_file.path)
                         skip = True
                         break
                     else:
@@ -257,14 +337,46 @@ class Offloader(QThread):
                             dest_file.path.parent.mkdir(exist_ok=True, parents=True)
 
                             # Send signal to GUI
-                            self._signal["action"] = (
-                                f"Processing file {file_id + 1}/{len(self.source_files.files)} [copying]"
-                            )
+                            copying_action = f"Processing file {file_id + 1}/{len(self.source_files.files)} [copying]"
+                            self._signal["action"] = copying_action
                             self._progress_signal.emit(self._signal)
+
+                            # Progress callback: throttle to ~1% or 100ms so we don't flood the GUI
+                            last_emitted = [None, None]  # [percentage, time]
+                            copy_files_pct = (file_id + 1) / total_files * 100 if total_files else 0
+
+                            def on_copy_progress(bytes_copied: int, total_bytes: int) -> None:
+                                total_job = self.source_files.size
+                                if total_job <= 0:
+                                    return
+                                projected = (
+                                    (self.ol_bytes_transferred + bytes_copied) / total_job * 100
+                                )
+                                # Use max(bytes, file-based) so bar isn't 0 when first files were skipped
+                                display_pct = max(projected, copy_files_pct)
+                                now = time.perf_counter()
+                                # Emit on first call, when 1%+ progress, every 100ms, or when file done
+                                should_emit = (
+                                    last_emitted[0] is None
+                                    or (display_pct - last_emitted[0]) >= 1.0
+                                    or (now - last_emitted[1]) >= 0.1
+                                    or (total_bytes > 0 and bytes_copied >= total_bytes)
+                                )
+                                if should_emit:
+                                    last_emitted[0] = display_pct
+                                    last_emitted[1] = now
+                                    self._signal["percentage"] = int(display_pct)
+                                    self._signal["action"] = copying_action
+                                    self._signal["time"] = self._display_time_remaining(
+                                        file_id, total_files
+                                    )
+                                    self._progress_signal.emit(self._signal)
 
                             # Copy file (with in-stream hashes; no extra read for verify)
                             src_hash, dest_hash = utils.pathlib_copy_with_checksum(
-                                source_file.path, dest_file.path
+                                source_file.path,
+                                dest_file.path,
+                                progress_callback=on_copy_progress,
                             )
                             source_file.checksum = src_hash
                             dest_file.checksum = dest_hash

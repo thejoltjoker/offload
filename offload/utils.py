@@ -17,6 +17,7 @@ import time
 from collections import namedtuple
 from datetime import datetime
 from pathlib import Path
+from typing import Callable, Optional
 
 import xxhash
 from PIL import Image, UnidentifiedImageError
@@ -549,17 +550,28 @@ def file_checksum(filename, hashtype="xxhash", block_size=65536):
         return checksum_sha256(filename, block_size=block_size)
 
 
-def checksum_xxhash(file_path, block_size=65536):
-    """Get xxhash checksum for a file"""
+def checksum_xxhash(
+    file_path,
+    block_size=65536,
+    progress_callback: Optional[Callable[[int, int], None]] = None,
+):
+    """Get xxhash checksum for a file.
+
+    If progress_callback is given, it is called after each block with
+    (bytes_read_so_far, total_file_bytes).
+    """
     if xxhash is None:
         raise Exception("xxhash not available on this platform.  Try 'pip install xxhash'")
-    else:
-        h = xxhash.xxh3_64()
-
+    h = xxhash.xxh3_64()
+    total_bytes = Path(file_path).stat().st_size
+    bytes_read = 0
     with open(file_path, "rb") as f:
         for chunk in iter(lambda: f.read(block_size), b""):
             h.update(chunk)
-        return h.hexdigest()
+            bytes_read += len(chunk)
+            if progress_callback is not None:
+                progress_callback(bytes_read, total_bytes)
+    return h.hexdigest()
 
 
 def checksum_md5(file_path, block_size=65536):
@@ -670,20 +682,33 @@ def pathlib_copy(source: Path, destination: Path, chunk_size=8 * 1024 * 1024):
         destination.write_bytes(source.read_bytes())
 
 
-def pathlib_copy_with_checksum(source: Path, destination: Path, chunk_size=8 * 1024 * 1024):
+def pathlib_copy_with_checksum(
+    source: Path,
+    destination: Path,
+    chunk_size=8 * 1024 * 1024,
+    progress_callback: Optional[Callable[[int, int], None]] = None,
+):
     """Copy a file while computing xxhash of source and destination (same bytes).
     Preserves metadata (mtime, atime, mode) via shutil.copystat.
     Returns (source_hexdigest, dest_hexdigest) for verification without re-reading.
+
+    If progress_callback is given, it is called after each chunk with
+    (bytes_copied_so_far, total_file_bytes).
     """
     if xxhash is None:
         raise Exception("xxhash not available on this platform.  Try 'pip install xxhash'")
+    total_bytes = source.stat().st_size
     h_source = xxhash.xxh3_64()
     h_dest = xxhash.xxh3_64()
+    bytes_copied = 0
     with source.open("rb") as src, destination.open("wb") as dest:
         for chunk in iter(lambda: src.read(chunk_size), b""):
             h_source.update(chunk)
             h_dest.update(chunk)
             dest.write(chunk)
+            bytes_copied += len(chunk)
+            if progress_callback is not None:
+                progress_callback(bytes_copied, total_bytes)
     shutil.copystat(source, destination)
     return (h_source.hexdigest(), h_dest.hexdigest())
 

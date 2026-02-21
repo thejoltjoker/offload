@@ -471,6 +471,35 @@ class TestUtils(TestCase):
             )
             self.assertEqual(src_exif.get("Model"), dest_exif.get("Model"), "Model should match")
 
+    def test_pathlib_copy_with_checksum_progress_callback(self):
+        """progress_callback is invoked after each chunk; last call is (file_size, file_size)."""
+        source = self.test_data_path / "progress_src.bin"
+        dest = self.test_data_path / "progress_dest.bin"
+        # Use size that yields multiple chunks with default 8 MiB chunk (e.g. 20 MiB)
+        size = 20 * 1024 * 1024
+        source.write_bytes(bytes(size))
+        progress_calls = []
+
+        def record_progress(bytes_copied: int, total_bytes: int) -> None:
+            progress_calls.append((bytes_copied, total_bytes))
+
+        utils.pathlib_copy_with_checksum(
+            source, dest, chunk_size=4 * 1024 * 1024, progress_callback=record_progress
+        )
+        self.assertGreater(
+            len(progress_calls), 0, "progress_callback should be called at least once"
+        )
+        self.assertEqual(
+            progress_calls[-1],
+            (size, size),
+            "Last callback should be (file_size, file_size)",
+        )
+        # Callbacks should be monotonically increasing
+        for i in range(1, len(progress_calls)):
+            self.assertGreaterEqual(
+                progress_calls[i][0], progress_calls[i - 1][0], "bytes_copied should not decrease"
+            )
+
 
 class TestPreset(TestCase):
     def setUp(self) -> None:
