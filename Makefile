@@ -5,7 +5,7 @@ APPLICATIONS  ?= /Applications
 .PHONY: clean build zip deploy-website install all
 
 clean:
-	rm -rf dist build
+	rm -rf dist/ build/
 
 build: clean
 	pipenv run python setup.py py2app
