@@ -15,9 +15,9 @@ import string
 import subprocess
 import time
 from collections import namedtuple
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, Optional
 
 import xxhash
 from PIL import Image, UnidentifiedImageError
@@ -350,6 +350,7 @@ class Settings:
         self._default_settings = {
             "latest_destination": str(Path().home().resolve()),
             "default_destination": None,
+            "latest_source": None,
             "structure": "taken_date",
             "prefix": "taken_date",
             "filename": None,
@@ -436,6 +437,27 @@ class Settings:
         """Set latest offload destination"""
         path = Path(path)
         self._write_settings(default_destination=str(path.resolve()))
+
+    @property
+    def latest_source(self):
+        """Get latest offload source
+
+        Returns:
+            Path | None: path to latest offload source if still valid, else None
+        """
+        src = self._read_setting("latest_source")
+        if src:
+            src_path = Path(src)
+            if src_path.is_dir():
+                return src_path
+
+        return None
+
+    @latest_source.setter
+    def latest_source(self, path):
+        """Set latest offload source"""
+        path = Path(path)
+        self._write_settings(latest_source=str(path.resolve()))
 
     def destination(self):
         """Get latest offload destination
@@ -553,7 +575,7 @@ def file_checksum(filename, hashtype="xxhash", block_size=65536):
 def checksum_xxhash(
     file_path,
     block_size=65536,
-    progress_callback: Optional[Callable[[int, int], None]] = None,
+    progress_callback: Callable[[int, int], None] | None = None,
 ):
     """Get xxhash checksum for a file.
 
@@ -686,7 +708,7 @@ def pathlib_copy_with_checksum(
     source: Path,
     destination: Path,
     chunk_size=8 * 1024 * 1024,
-    progress_callback: Optional[Callable[[int, int], None]] = None,
+    progress_callback: Callable[[int, int], None] | None = None,
 ):
     """Copy a file while computing xxhash of source and destination (same bytes).
     Preserves metadata (mtime, atime, mode) via shutil.copystat.

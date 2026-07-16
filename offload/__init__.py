@@ -114,6 +114,7 @@ EXCLUDE_FILES = [
     "store_generation.\r",
     ".Spotlight-V100",
 ]
+EXCLUDE_VOLUMES = ["xarts"]
 
 _script_data = Path(os.getcwd()) / "data"
 _script_data.mkdir(parents=True, exist_ok=True)

@@ -8,7 +8,7 @@ clean:
 	rm -rf dist/ build/
 
 build: clean
-	pipenv run python setup.py py2app
+	uv run --python 3.12 --extra build python setup.py py2app
 
 zip: build
 	zip -r dist/Offload.zip dist/Offload.app

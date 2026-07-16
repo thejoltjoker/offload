@@ -4,9 +4,9 @@ Run with: pytest tests/benchmark_copy.py --benchmark-only
 Or with options: pytest tests/benchmark_copy.py --benchmark-only --benchmark-sort=mean
 """
 
-import pytest
 from pathlib import Path
 
+import pytest
 from offload import utils
 
 # Size of temp file used for benchmarking (MiB)

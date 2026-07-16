@@ -265,7 +265,13 @@ class Offloader(QThread):
                     last_verify_emit = [None, None]  # [pct, time]
                     verify_files_pct = (file_id + 1) / total_files * 100 if total_files else 0
 
-                    def make_verify_callback(action_label):
+                    def make_verify_callback(
+                        action_label,
+                        *,
+                        verify_files_pct=verify_files_pct,
+                        file_id=file_id,
+                        last_verify_emit=last_verify_emit,
+                    ):
                         def cb(bytes_read: int, total: int) -> None:
                             if total <= 0:
                                 return
@@ -345,7 +351,15 @@ class Offloader(QThread):
                             last_emitted = [None, None]  # [percentage, time]
                             copy_files_pct = (file_id + 1) / total_files * 100 if total_files else 0
 
-                            def on_copy_progress(bytes_copied: int, total_bytes: int) -> None:
+                            def on_copy_progress(
+                                bytes_copied: int,
+                                total_bytes: int,
+                                *,
+                                copy_files_pct=copy_files_pct,
+                                last_emitted=last_emitted,
+                                copying_action=copying_action,
+                                file_id=file_id,
+                            ) -> None:
                                 total_job = self.source_files.size
                                 if total_job <= 0:
                                     return

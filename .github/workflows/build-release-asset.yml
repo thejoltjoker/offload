@@ -20,16 +20,14 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install pipenv and py2app
-        run: pip install pipenv py2app
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
 
       - name: Install dependencies
-        run: pipenv install
-        env:
-          PIPENV_VENV_IN_PROJECT: 1
+        run: uv sync --extra build
 
       - name: Build and zip app
-        run: pipenv run make zip
+        run: uv run --extra build make zip
 
       - name: Upload zip to release
         uses: softprops/action-gh-release@v2

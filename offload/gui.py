@@ -30,7 +30,7 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
-from offload import APP_DATA_PATH, VERSION, utils
+from offload import APP_DATA_PATH, EXCLUDE_VOLUMES, VERSION, utils
 from offload.app import Offloader
 from offload.styles import COLORS, STYLES
 from offload.utils import File, Settings, disk_usage, setup_logger
@@ -268,13 +268,18 @@ class MainWindow(QMainWindow):
         self.sourcePath = None
         # self.sourcePath = Path().home()
 
-        # Load smallest drive as source path
-        vols = self.volumes()
-        if vols:
-            smallest_vol = min(vols, key=vols.get)
-            # Only pick volumes smaller than 129 GB
-            if vols[smallest_vol] / 1024**3 < 129:
-                self.sourcePath = Path(smallest_vol)
+        # Prefer the last-used source if it's still mounted/valid
+        last_source = self.settings.latest_source
+        if last_source and last_source.is_dir():
+            self.sourcePath = last_source
+        else:
+            # Fall back to smallest mounted volume (excluded volumes already filtered out)
+            vols = self.volumes()
+            if vols:
+                smallest_vol = min(vols, key=vols.get)
+                # Only pick volumes smaller than 129 GB
+                if vols[smallest_vol] / 1024**3 < 129:
+                    self.sourcePath = Path(smallest_vol)
 
         _apply_font(self)
 
@@ -556,6 +561,7 @@ class MainWindow(QMainWindow):
 
         if path:
             self.sourcePath = path
+            self.settings.latest_source = self.sourcePath
             if not self.offloader:
                 self.initOffloader()
             self.updateSource()
@@ -611,6 +617,8 @@ class MainWindow(QMainWindow):
             for p in psutil.disk_partitions():
                 if "Volumes" in p.mountpoint:
                     if "Recovery" not in p.mountpoint:
+                        if Path(p.mountpoint).name in EXCLUDE_VOLUMES:
+                            continue
                         vols[p.mountpoint] = psutil.disk_usage(p.mountpoint).total
             if vols:
                 logging.debug(vols)
